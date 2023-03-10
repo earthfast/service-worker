@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+  <link rel="stylesheet" href="/armada/styles/main.css">
+</head>
+
+<body>
+  <div id="content">
+    <img id="logo" src="/armada/images/armada_logo_plus_name.svg" alt="Armada">
+    <h2>Securely loading <span id="domain"></span>&hellip;</h2>
+    <p id="error"></p>
+  </div>
+
+  <script>
+    const serviceWorker = '/armada-sw.js';
+
+    function fail(message) {
+      console.error(message);
+      document.getElementById('error').innerText = message;
+    }
+
+    const reloadAfterWallTime = function (initDate) {
+      return function (delayMs) {
+        const msSinceInit = Date.now() - initDate;
+        const timeout = Math.max(0, delayMs - msSinceInit);
+        setTimeout(() => location.reload(), timeout);
+      }
+    }(Date.now());
+
+    window.addEventListener('load', () => {
+      document.getElementById('domain').innerText = location.host;
+
+      // lack of service worker support is a catastrophic failure
+      if (!('serviceWorker' in navigator)) {
+        fail('This browser does not support the Armada Network Service Worker, please use a native browser instead.');
+        return;
+      }
+
+      // listen for messages from the service worker
+      navigator.serviceWorker.addEventListener('message', event => {
+        const eventType = event.data.type ? event.data.type : event.data.action;
+        console.log(`New service worker message received '${eventType}'`, event);
+
+        switch (eventType) {
+          // service worker is initialized
+          case 'INITIALIZED': reloadAfterWallTime(1000); break;
+
+          // a new service worker version has been detected
+          case 'VERSION_DETECTED': console.log('VERSION_DETECTED'); break;
+
+          // a new service worker version is ready to be applied
+          case 'VERSION_READY': console.log('VERSION_READY'); break;
+
+          // the content checksum from the manifest doesn't match the hash of the fetched content
+          case 'CONTENT_CHECKSUM_MISMATCH': console.log('CONTENT_CHECKSUM_MISMATCH'); break;
+
+          // a single content node failed to retrieve content
+          case 'CONTENT_NODE_FETCH_FAILURE': console.log('CONTENT_NODE_FETCH_FAILURE'); break;
+
+          // all available content nodes failed to retrieve content
+          case 'CONTENT_NODES_FETCH_FAILURE': console.log('CONTENT_NODES_FETCH_FAILURE'); break;
+        }
+      });
+
+      // register the service worker
+      navigator.serviceWorker.register(serviceWorker, { scope: '/' })
+        .then(reg => {
+          // A scenario exists where this landing page is being served and executed even though the
+          // service worker is already installed and active. It can occur, for instance, if a user
+          // does a hard refresh in their browser after the service worker has been installed.
+          //
+          // In this case we'll never get an INITIALIZED message, so a reload needs to be triggered
+          // manually. Since the service worker is active, we know the onFetch handler is installed
+          // and will be responsible for serving the reload request.
+          if (reg.active) {
+            reloadAfterWallTime(1000);
+          }
+        })
+        .catch(err => {
+          fail('Service worker registration failed: ' + err);
+        });
+    });
+  </script>
+</body>
+
+</html>

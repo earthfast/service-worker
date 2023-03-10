@@ -1,0 +1,38 @@
+@font-face {
+    font-family: 'Inter';
+    font-style: normal;
+    font-weight: 400;
+    font-display: swap;
+    src: url('/armada/fonts/Inter-Latin-400.woff2') format('woff2');
+}
+
+body {
+    color: #ffffff;
+    background-color: #00041A;
+    font-family: 'Inter', sans-serif;
+}
+
+#content {
+    margin: 0 auto;
+    padding: 0 2rem;
+    max-width: 1000px;
+    text-align: center;
+}
+
+#logo {
+    margin: 3rem;
+}
+
+h2 {
+    color: #CBCBCB;
+    font-weight: normal;
+    font-size: 24px;
+    margin: 0;
+    padding: 0;
+}
+
+#error {
+    color: #ae0000;
+    font-size: 16px;
+    margin-top: 2rem;
+}

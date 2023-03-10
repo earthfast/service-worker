@@ -1,0 +1,42 @@
+name: CI
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+  workflow_dispatch:
+jobs:
+  build-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Use Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: "16.x"
+          cache: "npm"
+
+      - name: Setup
+        timeout-minutes: 2
+        run: |
+          npm i
+          npm run build
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Format
+        run: |
+          FORMAT_ERRORS=$(npm run format:dryrun 2>&1 >/dev/null)
+          if [ -n "$FORMAT_ERRORS" ]; then
+            echo "Some source files are incorrectly formatted:"
+            echo "$FORMAT_ERRORS"
+            exit 1
+          fi
+
+      - name: Unit Test
+        run: npm test
+
+      - name: E2E Test
+        run: npm run test:e2e

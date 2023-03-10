@@ -1,0 +1,6 @@
+node_modules
+dist
+src/service-worker/src/*
+!src/service-worker/src/dispersed
+src/service-worker/test
+src/service-worker/testing

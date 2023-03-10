@@ -1,0 +1,40 @@
+{
+  "ts-node": {
+    "extends": "@tsconfig/node16/tsconfig.json",
+    "transpileOnly": true,
+    "compilerOptions": {
+      "module": "commonjs",
+      "target": "es2020"
+    }
+  },
+  "compilerOptions": {
+    "strict": true,
+    "module": "es2020",
+    "moduleResolution": "node",
+    "esModuleInterop": true,
+    "rootDir": ".",
+    "outDir": "./dist",
+    "noImplicitAny": true,
+    "noImplicitOverride": true,
+    "strictNullChecks": true,
+    "strictPropertyInitialization": true,
+    "useUnknownInCatchVariables": false,
+    "noFallthroughCasesInSwitch": true,
+    "inlineSourceMap": false,
+    "removeComments": true,
+    "lib": [
+      "es2020",
+      "dom"
+    ],
+    "target": "es2020",
+    "types": [
+      "angular",
+      "node"
+    ],
+    "baseUrl": "http://armada.local:30080"
+  },
+  "exclude": [
+    "./src/service-worker/test/**/*",
+    "./src/service-worker/testing/**/*",
+  ],
+}
