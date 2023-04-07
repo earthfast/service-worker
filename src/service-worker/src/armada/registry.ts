@@ -6,7 +6,21 @@ export interface NodeRegistry {
   refreshNodesInterval(): void;
 }
 
-export class NodeRegistryImpl implements NodeRegistry {
+export class StaticNodeRegistry implements NodeRegistry {
+  constructor(protected contentNodes: string[]) {}
+
+  public async allNodes(randomize: boolean): Promise<string[]> {
+    const nodes = this.contentNodes.slice();
+    if (randomize) {
+      shuffle(nodes);
+    }
+    return nodes;
+  }
+
+  public refreshNodesInterval() {}
+}
+
+export class DynamicNodeRegistry implements NodeRegistry {
   private contentNodes: string[] = [];
   private refreshPending: Promise<void>|null = null;
   private updateTimer: ReturnType<typeof setTimeout>|null = null;

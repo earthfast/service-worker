@@ -9,7 +9,7 @@
 import {Adapter} from './src/adapter';
 import {ArmadaAPIClientImpl, HTTPProtocol} from './src/armada/api';
 import {ArmadaDriver as Driver} from './src/armada/driver';
-import {NodeRegistryImpl} from './src/armada/registry';
+import {DynamicNodeRegistry} from './src/armada/registry';
 import {CacheDatabase} from './src/db-cache';
 
 const scope = self as unknown as ServiceWorkerGlobalScope;
@@ -26,5 +26,5 @@ const apiClient = new ArmadaAPIClientImpl(
     location.protocol as HTTPProtocol,
     projectId,
 );
-const registry = new NodeRegistryImpl(apiClient, bootstrapNodes, contentNodeRefreshIntervalMs);
+const registry = new DynamicNodeRegistry(apiClient, bootstrapNodes, contentNodeRefreshIntervalMs);
 new Driver(scope, adapter, new CacheDatabase(adapter), registry, apiClient, scope.crypto.subtle);

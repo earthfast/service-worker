@@ -15,7 +15,7 @@ import {webcrypto} from 'crypto';
 
 import {ArmadaAPIClient, ArmadaAPIClientImpl} from '../../src/armada/api';
 import {ArmadaDriver, ArmadaDriver as Driver} from '../../src/armada/driver';
-import {NodeRegistryImpl} from '../../src/armada/registry';
+import {DynamicNodeRegistry} from '../../src/armada/registry';
 import {CacheDatabase} from '../../src/db-cache';
 import {DriverReadyState} from '../../src/driver';
 import {AssetGroupConfig, DataGroupConfig, Manifest} from '../../src/manifest';
@@ -297,7 +297,7 @@ describe('Driver', () => {
 
     scope = new SwTestHarnessBuilder().withServerState(server).build();
     const apiClient = new ArmadaAPIClientImpl(scope, scope, 'http:', TEST_PROJECT_ID);
-    const registry = new NodeRegistryImpl(apiClient, [TEST_BOOTSTRAP_NODE], 10000);
+    const registry = new DynamicNodeRegistry(apiClient, [TEST_BOOTSTRAP_NODE], 10000);
     driver =
         new Driver(scope, scope, new CacheDatabase(scope), registry, apiClient, webcrypto.subtle);
   });
@@ -557,7 +557,7 @@ describe('Driver', () => {
                 .withServerState(serverUpdate)
                 .build();
     const apiClient = new ArmadaAPIClientImpl(scope, scope, 'http:', TEST_PROJECT_ID);
-    const registry = new NodeRegistryImpl(apiClient, [TEST_BOOTSTRAP_NODE], 10000);
+    const registry = new DynamicNodeRegistry(apiClient, [TEST_BOOTSTRAP_NODE], 10000);
     driver =
         new Driver(scope, scope, new CacheDatabase(scope), registry, apiClient, webcrypto.subtle);
     expect(await makeRequest(scope, '/foo.txt')).toEqual('this is foo');
@@ -616,7 +616,7 @@ describe('Driver', () => {
                 .withServerState(serverUpdate)
                 .build();
     const apiClient = new ArmadaAPIClientImpl(scope, scope, 'http:', TEST_PROJECT_ID);
-    const registry = new NodeRegistryImpl(apiClient, [TEST_BOOTSTRAP_NODE], 10000);
+    const registry = new DynamicNodeRegistry(apiClient, [TEST_BOOTSTRAP_NODE], 10000);
     driver =
         new Driver(scope, scope, new CacheDatabase(scope), registry, apiClient, webcrypto.subtle);
 
@@ -688,7 +688,7 @@ describe('Driver', () => {
                 .withServerState(serverUpdate)
                 .build();
     const apiClient = new ArmadaAPIClientImpl(scope, scope, 'http:', TEST_PROJECT_ID);
-    const registry = new NodeRegistryImpl(apiClient, [TEST_BOOTSTRAP_NODE], 10000);
+    const registry = new DynamicNodeRegistry(apiClient, [TEST_BOOTSTRAP_NODE], 10000);
     driver =
         new Driver(scope, scope, new CacheDatabase(scope), registry, apiClient, webcrypto.subtle);
     expect(await makeRequest(scope, '/foo.txt')).toEqual('this is foo');
@@ -734,7 +734,7 @@ describe('Driver', () => {
     // Simulate failing to load the stored state (and thus starting from an empty state).
     scope.caches.delete('db:control');
     const apiClient = new ArmadaAPIClientImpl(scope, scope, 'http:', TEST_PROJECT_ID);
-    const registry = new NodeRegistryImpl(apiClient, [TEST_BOOTSTRAP_NODE], 10000);
+    const registry = new DynamicNodeRegistry(apiClient, [TEST_BOOTSTRAP_NODE], 10000);
     driver =
         new Driver(scope, scope, new CacheDatabase(scope), registry, apiClient, webcrypto.subtle);
 
@@ -1193,7 +1193,7 @@ describe('Driver', () => {
       const newScope =
           new SwTestHarnessBuilder('http://localhost/foo/bar/').withServerState(server).build();
       const apiClient = new ArmadaAPIClientImpl(newScope, newScope, 'http:', TEST_PROJECT_ID);
-      const registry = new NodeRegistryImpl(apiClient, [TEST_BOOTSTRAP_NODE], 10000);
+      const registry = new DynamicNodeRegistry(apiClient, [TEST_BOOTSTRAP_NODE], 10000);
       new Driver(
           newScope, newScope, new CacheDatabase(newScope), registry, apiClient, webcrypto.subtle);
 
@@ -1271,7 +1271,7 @@ describe('Driver', () => {
                            .withServerState(serverState)
                            .build();
       const apiClient = new ArmadaAPIClientImpl(newScope, newScope, 'http:', TEST_PROJECT_ID);
-      const registry = new NodeRegistryImpl(apiClient, [TEST_BOOTSTRAP_NODE], 10000);
+      const registry = new DynamicNodeRegistry(apiClient, [TEST_BOOTSTRAP_NODE], 10000);
       const newDriver = new Driver(
           newScope, newScope, new CacheDatabase(newScope), registry, apiClient, webcrypto.subtle);
 
@@ -1398,7 +1398,7 @@ describe('Driver', () => {
       scope = new SwTestHarnessBuilder().withServerState(brokenServer).build();
       (scope.registration as any).scope = 'http://site.com';
       const apiClient = new ArmadaAPIClientImpl(scope, scope, 'http:', TEST_PROJECT_ID);
-      const registry = new NodeRegistryImpl(apiClient, [TEST_BOOTSTRAP_NODE], 10000);
+      const registry = new DynamicNodeRegistry(apiClient, [TEST_BOOTSTRAP_NODE], 10000);
       driver =
           new Driver(scope, scope, new CacheDatabase(scope), registry, apiClient, webcrypto.subtle);
 
@@ -1618,7 +1618,7 @@ describe('Driver', () => {
         // Create initial server state and initialize the SW.
         scope = new SwTestHarnessBuilder().withServerState(originalServer).build();
         let apiClient = new ArmadaAPIClientImpl(scope, scope, 'http:', TEST_PROJECT_ID);
-        let registry = new NodeRegistryImpl(apiClient, [TEST_BOOTSTRAP_NODE], 10000);
+        let registry = new DynamicNodeRegistry(apiClient, [TEST_BOOTSTRAP_NODE], 10000);
         driver = new Driver(
             scope, scope, new CacheDatabase(scope), registry, apiClient, webcrypto.subtle);
 
@@ -1637,7 +1637,7 @@ describe('Driver', () => {
                     .withServerState(updatedServer)
                     .build();
         apiClient = new ArmadaAPIClientImpl(scope, scope, 'http:', TEST_PROJECT_ID);
-        registry = new NodeRegistryImpl(apiClient, [TEST_BOOTSTRAP_NODE], 10000);
+        registry = new DynamicNodeRegistry(apiClient, [TEST_BOOTSTRAP_NODE], 10000);
         driver = new Driver(
             scope, scope, new CacheDatabase(scope), registry, apiClient, webcrypto.subtle);
 
@@ -1671,7 +1671,7 @@ describe('Driver', () => {
         // Create initial server state and initialize the SW.
         scope = new SwTestHarnessBuilder().withServerState(originalServer).build();
         const apiClient = new ArmadaAPIClientImpl(scope, scope, 'http:', TEST_PROJECT_ID);
-        const registry = new NodeRegistryImpl(apiClient, [TEST_BOOTSTRAP_NODE], 10000);
+        const registry = new DynamicNodeRegistry(apiClient, [TEST_BOOTSTRAP_NODE], 10000);
         driver = new Driver(
             scope, scope, new CacheDatabase(scope), registry, apiClient, webcrypto.subtle);
 
@@ -1746,7 +1746,7 @@ describe('Driver', () => {
       const server = serverBuilderBase.withManifest(freshnessManifest).build();
       const scope = new SwTestHarnessBuilder().withServerState(server).build();
       const apiClient = new ArmadaAPIClientImpl(scope, scope, 'http:', TEST_PROJECT_ID);
-      const registry = new NodeRegistryImpl(apiClient, [TEST_BOOTSTRAP_NODE], 10000);
+      const registry = new DynamicNodeRegistry(apiClient, [TEST_BOOTSTRAP_NODE], 10000);
       const driver =
           new Driver(scope, scope, new CacheDatabase(scope), registry, apiClient, webcrypto.subtle);
 
