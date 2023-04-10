@@ -1,5 +1,5 @@
 import {NodesResponse} from '../../src/armada/api';
-import {NodeRegistryImpl} from '../../src/armada/registry';
+import {DynamicNodeRegistry, StaticNodeRegistry} from '../../src/armada/registry';
 
 class StaticAPIClient {
   public count: number;
@@ -35,12 +35,39 @@ class MultiHostStaticAPIClient {
   }
 }
 
-describe('NodeRegistryImpl', () => {
+describe('StaticNodeRegistry', () => {
+  describe('returns content nodes', () => {
+    it('when allNodes() is called', async () => {
+      const nodes = ['content0', 'content1'];
+      const registry = new StaticNodeRegistry(nodes);
+      expect(await registry.allNodes(false)).toEqual(nodes);
+    });
+
+    it('randomizes the returned nodes when specified', async () => {
+      const nodesArr = [...Array(20).keys()].map(i => `content${i}`);
+      const nodesSet = new Set(nodesArr);
+      const registry = new StaticNodeRegistry(nodesArr);
+
+      let foundShuffled = false;
+      for (let i = 0; i < 100 && !foundShuffled; i++) {
+        const got = await registry.allNodes(true);
+        expect(got.length).toEqual(nodesArr.length);
+        expect(new Set(got)).toEqual(nodesSet);
+        if (!arraysMatch(got, nodesArr)) {
+          foundShuffled = true;
+        }
+      }
+      expect(foundShuffled).toBeTrue();
+    });
+  });
+});
+
+describe('DynamicNodeRegistry', () => {
   describe('populates content nodes', () => {
     it('when allNodes() is called', async () => {
       const nodes = ['content0', 'content1'];
       const apiClient = new StaticAPIClient(nodes);
-      const registry = new NodeRegistryImpl(apiClient, ['topology'], 10000);
+      const registry = new DynamicNodeRegistry(apiClient, ['topology'], 10000);
 
       expect(await registry.allNodes(false)).toEqual(nodes);
     });
@@ -93,7 +120,7 @@ describe('NodeRegistryImpl', () => {
       for (let tc of cases) {
         it(tc.name, async () => {
           const apiClient = new MultiHostStaticAPIClient(tc.topologyData);
-          const registry = new NodeRegistryImpl(apiClient, Object.keys(tc.topologyData), 10000);
+          const registry = new DynamicNodeRegistry(apiClient, Object.keys(tc.topologyData), 10000);
           expect(await registry.allNodes(false)).toEqual(tc.want);
         });
       }
@@ -136,7 +163,7 @@ describe('NodeRegistryImpl', () => {
     for (let tc of cases) {
       it(tc.name, async () => {
         const apiClient = new MultiHostStaticAPIClient(tc.topologyData);
-        const registry = new NodeRegistryImpl(apiClient, Object.keys(tc.topologyData), 10000);
+        const registry = new DynamicNodeRegistry(apiClient, Object.keys(tc.topologyData), 10000);
         await expectAsync(registry.allNodes(false)).toBeRejected();
       });
     }
@@ -144,12 +171,12 @@ describe('NodeRegistryImpl', () => {
 
   describe('content node cache', () => {
     let apiClient: StaticAPIClient;
-    let registry: NodeRegistryImpl;
+    let registry: DynamicNodeRegistry;
     const nodes = ['content0', 'content1'];
 
     beforeEach(async () => {
       apiClient = new StaticAPIClient(nodes);
-      registry = new NodeRegistryImpl(apiClient, ['topology'], 10000);
+      registry = new DynamicNodeRegistry(apiClient, ['topology'], 10000);
     });
 
     it('will hit once populated', async () => {
@@ -188,7 +215,7 @@ describe('NodeRegistryImpl', () => {
         return {hosts: ['content0', 'content1']};
       },
     };
-    const registry = new NodeRegistryImpl(waitingAPIClient, ['topology0'], 10000);
+    const registry = new DynamicNodeRegistry(waitingAPIClient, ['topology0'], 10000);
 
     const fetch1 = registry.allNodes(false);
     const fetch2 = registry.allNodes(false);
@@ -205,7 +232,7 @@ describe('NodeRegistryImpl', () => {
     const nodesArr = [...Array(20).keys()].map(i => `content${i}`);
     const nodesSet = new Set(nodesArr);
     const apiClient = new StaticAPIClient(nodesArr);
-    const registry = new NodeRegistryImpl(apiClient, ['topology'], 10000);
+    const registry = new DynamicNodeRegistry(apiClient, ['topology'], 10000);
 
     let foundShuffled = false;
     for (let i = 0; i < 100 && !foundShuffled; i++) {
