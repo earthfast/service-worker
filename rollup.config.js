@@ -14,6 +14,7 @@ export default {
           values: {
             'process.env.BOOTSTRAP_NODES': JSON.stringify('{{.BootstrapNodes}}'),
             'process.env.CONTENT_NODE_REFRESH_INTERVAL_MS': 60 * 60 * 1000,  // 1 hour
+            'process.env.CONTENT_NODES': JSON.stringify('{{.ContentNodes}}'),
             'process.env.PROJECT_ID': JSON.stringify('{{.ProjectID}}'),
           },
           preventAssignment: true,
