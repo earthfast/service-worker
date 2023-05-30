@@ -1,0 +1,44 @@
+{
+  "configVersion": 1,
+  "timestamp": 1685455509636,
+  "index": "/index.html",
+  "assetGroups": [
+    {
+      "name": "main",
+      "installMode": "lazy",
+      "updateMode": "lazy",
+      "cacheQueryOptions": {
+        "ignoreVary": true
+      },
+      "urls": [
+        "/index.html",
+        "/blog/index.html"
+      ],
+      "patterns": []
+    }
+  ],
+  "dataGroups": [],
+  "hashTable": {
+    "/index.html": "25b7c0c49998c0e716456ed35dabfa1622253a69dbf21a6965b51ca6ef582f8c",
+    "/blog/index.html": "b56fe09ce18e961cba7c85257cdeada55a4ccf61c7f0db9f9b33c7af61a7d685"
+  },
+  "navigationUrls": [
+    {
+      "positive": true,
+      "regex": "^\\/.*$"
+    },
+    {
+      "positive": false,
+      "regex": "^\\/(?:.+\\/)?[^/]*\\.[^/]*$"
+    },
+    {
+      "positive": false,
+      "regex": "^\\/(?:.+\\/)?[^/]*__[^/]*$"
+    },
+    {
+      "positive": false,
+      "regex": "^\\/(?:.+\\/)?[^/]*__[^/]*\\/.*$"
+    }
+  ],
+  "navigationRequestStrategy": "performance"
+}
