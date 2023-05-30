@@ -67,9 +67,9 @@ export class AppVersion implements UpdateSource {
   }
 
   constructor(
-      private scope: ServiceWorkerGlobalScope, private adapter: Adapter, private database: Database,
-      idle: IdleScheduler, protected debugHandler: DebugHandler, readonly manifest: Manifest,
-      readonly manifestHash: string) {
+      private scope: ServiceWorkerGlobalScope, protected adapter: Adapter,
+      private database: Database, idle: IdleScheduler, protected debugHandler: DebugHandler,
+      readonly manifest: Manifest, readonly manifestHash: string) {
     // The hashTable within the manifest is an Object - convert it to a Map for easier lookups.
     Object.keys(manifest.hashTable).forEach(url => {
       this.hashTable.set(adapter.normalizeUrl(url), manifest.hashTable[url]);

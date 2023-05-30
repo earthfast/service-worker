@@ -52,4 +52,21 @@ export class ArmadaAppVersion extends AppVersion {
     // DataGroups are not supported.
     this.dataGroups = [];
   }
+
+  override handleFetch(req: Request, event: ExtendableEvent): Promise<Response|null> {
+    // Special case for handling index files that aren't requested directly, but rather should be
+    // served because their directory is being requested.
+    //
+    // For example, if /blog/ or /blog is requested and there exists a /blog/index.html, we want to
+    // serve that index file instead of the root index.html (which is the default behavior whenever
+    // there's a navigation request for a file that doesn't exist in the hash table).
+    if (this.isNavigationRequest(req)) {
+      const indexUrl = req.url + (req.url.endsWith('/') ? '' : '/') + 'index.html';
+      if (this.hashTable.has(this.adapter.normalizeUrl(indexUrl))) {
+        return super.handleFetch(this.adapter.newRequest(indexUrl), event);
+      }
+    }
+
+    return super.handleFetch(req, event);
+  }
 }
