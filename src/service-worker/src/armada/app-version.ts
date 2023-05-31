@@ -1,4 +1,5 @@
 import {Adapter} from '../adapter';
+import {NormalizedUrl} from '../api';
 import {AppVersion} from '../app-version';
 import {Database} from '../database';
 import {DebugHandler} from '../debug';
@@ -61,8 +62,9 @@ export class ArmadaAppVersion extends AppVersion {
     // serve that index file instead of the root index.html (which is the default behavior whenever
     // there's a navigation request for a file that doesn't exist in the hash table).
     if (this.isNavigationRequest(req)) {
-      const indexUrl = req.url + (req.url.endsWith('/') ? '' : '/') + 'index.html';
-      if (this.hashTable.has(this.adapter.normalizeUrl(indexUrl))) {
+      const url = this.adapter.normalizeUrl(req.url);
+      const indexUrl = url + (url.endsWith('/') ? '' : '/') + 'index.html';
+      if (this.hashTable.has(indexUrl as NormalizedUrl)) {
         return super.handleFetch(this.adapter.newRequest(indexUrl), event);
       }
     }

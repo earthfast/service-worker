@@ -12,14 +12,17 @@ it('subdirectories with index.html', () => {
   cy.visit(harness.domainNode.url);
   cy.get('h1').first().should('have.text', 'root index.html');
 
-  // With trailing slash
-  cy.get('a[href="/blog/"]').first().click();
-  cy.get('h1').first().should('have.text', 'blog index.html');
+  ['/blog',
+   '/blog?page=1',
+   '/blog/',
+   '/blog/?page=1',
+   '/blog/index.html',
+   '/blog/index.html?page=1',
+  ].forEach((href) => {
+    cy.get(`a[href="${href}"]`).first().click();
+    cy.get('h1').first().should('have.text', 'blog index.html');
 
-  cy.go('back');
-  cy.get('h1').first().should('have.text', 'root index.html');
-
-  // Without trailing slash
-  cy.get('a[href="/blog"]').first().click();
-  cy.get('h1').first().should('have.text', 'blog index.html');
+    cy.go('back');
+    cy.get('h1').first().should('have.text', 'root index.html');
+  });
 });
