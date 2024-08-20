@@ -1,7 +1,7 @@
-# Armada Service Worker
+# EarthFast Service Worker
 
 ### Overview
-This doc is a combination of snippets taken from the Angular documentation as well as brief blurbs about files that have been updated and what Armada has layered on top.
+This doc is a combination of snippets taken from the Angular documentation as well as brief blurbs about files that have been updated and what EarthFast has layered on top.
 
 From [Angular docs](https://angular.io/guide/service-worker-intro)
 >At its simplest, a service worker is a script that runs in the web browser and manages caching for an application.
@@ -24,10 +24,10 @@ From [Angular docs](https://angular.io/guide/service-worker-intro)
 >
 >To support these behaviors, the Angular service worker loads a manifest file from the server. The file, called ngsw.json (not to be confused with the web app manifest), describes the resources to cache and includes hashes of every file's contents. When an update to the application is deployed, the contents of the manifest change, informing the service worker that a new version of the application should be downloaded and cached. This manifest is generated from a CLI-generated configuration file called ngsw-config.json.
 
-Armada uses the network proxy + caching properties of service workers not for offline app caching and availability, but rather to proxy all requests through a service worker so content can be validated before being served to the user as well as intelligent handling of cache expiry etc.
+EarthFast uses the network proxy + caching properties of service workers not for offline app caching and availability, but rather to proxy all requests through a service worker so content can be validated before being served to the user as well as intelligent handling of cache expiry etc.
 
 ### Repo Layout & Structure
-The main entry point is [src/service-worker/main.ts](src/service-worker/main.ts), which is a modified version from the [angular service worker](https://github.com/angular/angular/blob/main/packages/service-worker/worker/main.ts). The modifications are basically to use the Armada driver and overrides as opposed to the base Angular driver. This gets sent into rollup to create a built version which outputs to the dist/ directory.
+The main entry point is [src/service-worker/main.ts](src/service-worker/main.ts), which is a modified version from the [angular service worker](https://github.com/angular/angular/blob/main/packages/service-worker/worker/main.ts). The modifications are basically to use the EarthFast driver and overrides as opposed to the base Angular driver. This gets sent into rollup to create a built version which outputs to the dist/ directory.
 
 
 ```
@@ -39,9 +39,9 @@ The main entry point is [src/service-worker/main.ts](src/service-worker/main.ts)
 │   │       └── styles
 │   └── service-worker
 │       ├── src - contains copy of the angular service worker WITH MODIFICATIONS. modifications are minor but see [here](vendor/angular/README.md) to check the diff
-│       │   └── armada - contains class overrides for the base angular service worker to add custom Armada functionality
-│       ├── test - follows a similar pattern as src/ with vendored angular files and armada overrides
-│       └── testing - follows a similar pattern as src/ with vendored angular files and armada overrides
+│       │   └── armada - contains class overrides for the base angular service worker to add custom EarthFast functionality
+│       ├── test - follows a similar pattern as src/ with vendored angular files and EarthFast overrides
+│       └── testing - follows a similar pattern as src/ with vendored angular files and EarthFast overrides
 └── vendor
     └── angular
         └── worker - vendored angular code
@@ -84,7 +84,7 @@ The main entry point is [src/service-worker/main.ts](src/service-worker/main.ts)
 
 16. `sha1.ts` - Implements a SHA-1 hashing function. It is used to generate hashes for assets and other content to ensure their integrity and to manage cache keys.
 
-### Armada Files & Overrides
+### EarthFast Files & Overrides
 
 ##### api.ts
 The `ArmadaAPIClientImpl` class implements the `ArmadaAPIClient` interface, providing methods to fetch content and content node information from a network. It constructs URLs for API requests and appends query parameters, including a cache-busting parameter. It also handles errors and throws if the response from the network is not successful.
@@ -112,7 +112,7 @@ The `NodeRegistry` interface and its implementations (`StaticNodeRegistry` and `
 
 
 ### Dev Guide
-To try to work on Armada Service Worker, the easiest way to test functionality is with tests. There's Armada specific unit tests as well as cypress E2E tests. It is possible to run the service worker locally as part of a full Armada stack, more info in the Dev Guides.
+To try to work on EarthFast Service Worker, the easiest way to test functionality is with tests. There's EarthFast specific unit tests as well as cypress E2E tests. It is possible to run the service worker locally as part of a full EarthFast stack, more info in the Dev Guides.
 
 All the functionality for building, testing is in package.json. Run `npm install` to install dependencies and `npm run` to list possible commands.
 
