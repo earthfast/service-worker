@@ -117,7 +117,7 @@ export class DomainNode extends FakeNode {
       body = body.replace('{{.ProjectID}}', this.projectId);
 
       cy.intercept(
-          '/armada-sw.js',
+          '/earthfast-sw.js',
           {
             hostname: this.hostname,
           },
