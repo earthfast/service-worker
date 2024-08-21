@@ -3,7 +3,7 @@
 ##
 FROM node:18 AS build
 
-WORKDIR /armada-sw
+WORKDIR /earthfast-sw
 
 COPY package.json .
 COPY package-lock.json .
@@ -17,4 +17,4 @@ RUN npm run build
 ##
 FROM scratch
 
-COPY --from=build /armada-sw/dist /armada-sw/dist
+COPY --from=build /earthfast-sw/dist /earthfast-sw/dist
