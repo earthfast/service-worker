@@ -18,7 +18,7 @@ const IDLE_DELAY = 1000;
 const MAX_IDLE_DELAY = 5000;
 
 export class ArmadaDriver extends Driver {
-  public static readonly MANIFEST_FILENAME = 'armada.json';
+  public static readonly MANIFEST_FILENAME = 'earthfast.json';
 
   // Override the state property so we can panic if the service worker ever attempts to transition
   // into a non-NORMAL state. We throw an error instead of just ignoring it because such a
