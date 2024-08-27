@@ -19,6 +19,7 @@ const MAX_IDLE_DELAY = 5000;
 
 export class ArmadaDriver extends Driver {
   public static readonly MANIFEST_FILENAME = 'earthfast.json';
+  public static readonly FALLBACK_MANIFEST_FILENAME = 'armada.json';
 
   // Override the state property so we can panic if the service worker ever attempts to transition
   // into a non-NORMAL state. We throw an error instead of just ignoring it because such a
@@ -203,22 +204,28 @@ export class ArmadaDriver extends Driver {
   }
 
   protected async fetchLatestManifestOnce(node: string): Promise<string> {
-    let resp: Response;
-    try {
-      resp = await this.apiClient.getContent(ArmadaDriver.MANIFEST_FILENAME, node);
-    } catch (err) {
-      const msg = `Error fetching manifest: node=${node} error=${err}`;
-      await this.broadcast(MsgManifestFetchError(msg));
-      throw err;
+    const filenames = [ArmadaDriver.MANIFEST_FILENAME, ArmadaDriver.FALLBACK_MANIFEST_FILENAME];
+    for (const filename of filenames) {
+      try {
+        const resp = await this.apiClient.getContent(filename, node);
+
+        if (resp.ok) {
+          return resp.text();
+        }
+
+        if (filename === filenames[filenames.length - 1]) {
+          throw new Error(`HTTP error: ${resp.status}`);
+        }
+      } catch (err) {
+        if (filename === filenames[filenames.length - 1]) {
+          const msg = `Error fetching manifest: node=${node} error=${err}`;
+          await this.broadcast(MsgManifestFetchError(msg));
+          throw new SwManifestFetchFailureError(msg);
+        }
+      }
     }
 
-    if (!resp.ok) {
-      const msg = `Error fetching manifest: node=${node} status=${resp.status}`;
-      await this.broadcast(MsgManifestFetchError(msg));
-      throw new SwManifestFetchFailureError(msg);
-    }
-
-    return resp.text();
+    throw new Error('Unexpected error in fetchLatestManifestOnce');
   }
 
   protected async probeLatestManifest(): Promise<Manifest> {
