@@ -33,7 +33,7 @@ The main entry point is [src/service-worker/main.ts](src/service-worker/main.ts)
 ```
 ├── src
 │   ├── landing-page - splash screen displayed to users when making request to domain node, initializing service worker and fetching content from content nodes
-│   │   └── armada
+│   │   └── earthfast
 │   │       ├── fonts
 │   │       ├── images
 │   │       └── styles

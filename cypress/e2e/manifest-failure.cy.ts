@@ -10,6 +10,7 @@ it('manifest fetch on content nodes failure', () => {
   harness.intercept();
   harness.spyOnMessages(window);
 
+  content0.failResource('earthfast.json');
   content0.failResource('armada.json');
 
   cy.visit(harness.domainNode.url);
