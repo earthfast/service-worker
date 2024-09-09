@@ -78,15 +78,16 @@
       // register the service worker
       navigator.serviceWorker.register(serviceWorker, { scope: '/' })
         .then(reg => {
-          // A scenario exists where this landing page is being served and executed even though the
-          // service worker is already installed and active. It can occur, for instance, if a user
-          // does a hard refresh in their browser after the service worker has been installed.
-          //
-          // In this case we'll never get an INITIALIZED message, so a reload needs to be triggered
-          // manually. Since the service worker is active, we know the onFetch handler is installed
-          // and will be responsible for serving the reload request.
-          if (reg.active) {
-            reloadAfterWallTime(1000);
+          // Check if there's no controller yet (first time registration)
+          if (!navigator.serviceWorker.controller) {
+            // If no controller, reload immediately
+            window.location.reload();
+          } else {
+            // If there's already a controller, wait for the new service worker to become active
+            navigator.serviceWorker.addEventListener('controllerchange', function () {
+              console.log('New Service Worker activated, reloading page...');
+              window.location.reload();
+            });
           }
         })
         .catch(err => {
