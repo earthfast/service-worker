@@ -75,20 +75,28 @@
         }
       });
 
-      // register the service worker
       navigator.serviceWorker.register(serviceWorker, { scope: '/' })
         .then(reg => {
-          // Check if there's no controller yet (first time registration)
-          if (!navigator.serviceWorker.controller) {
-            // If no controller, reload immediately
-            window.location.reload();
-          } else {
-            // If there's already a controller, wait for the new service worker to become active
-            navigator.serviceWorker.addEventListener('controllerchange', function () {
-              console.log('New Service Worker activated, reloading page...');
-              window.location.reload();
+          if (reg.installing) {
+            console.log('Service worker installing');
+            reg.installing.addEventListener('statechange', () => {
+              if (reg.installing.state === 'installed') {
+                console.log('Service worker installed, reloading...');
+                window.location.reload();
+              }
             });
+          } else if (reg.waiting) {
+            console.log('Service worker waiting');
+            reg.waiting.postMessage({ type: 'SKIP_WAITING' });
+          } else if (reg.active) {
+            console.log('Service worker active');
+            window.location.reload();
           }
+
+          navigator.serviceWorker.addEventListener('controllerchange', () => {
+            console.log('New service worker controlling, reloading...');
+            window.location.reload();
+          });
         })
         .catch(err => {
           fail('Service worker registration failed: ' + err);
