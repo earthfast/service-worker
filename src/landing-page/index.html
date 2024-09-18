@@ -1,28 +1,30 @@
 <!doctype html>
 <html lang="en">
 
-<head>
-  <link rel="stylesheet" href="/earthfast/styles/main.css">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-</head>
+  <head>
+    <link rel="stylesheet" href="/earthfast/styles/main.css">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  </head>
 
-<body>
-  <div id="content">
-    <div class="logo">
-      <img id="logo" class="logo__image" src="/earthfast/images/earth-fast-logo.svg" alt="Earth Fast">
-      <h2 class="logo__title">EarthFast</h2>
-    </div>
-    <div class="description-container">
-      <div class="description-text">
-        <span class="securely-text" id="description-text">Securely loading</span>
-        <span id="domain"></span>
+  <body>
+    <div id="content">
+      <div class="logo">
+        <img id="logo" class="logo__image"
+          src="/earthfast/images/earth-fast-logo.svg" alt="Earth Fast">
+        <h2 class="logo__title">EarthFast</h2>
       </div>
-      <div id="spinner" class="spinner"></div>
+      <div class="description-container">
+        <div class="description-text">
+          <span class="securely-text" id="description-text">Securely
+            loading</span>
+          <span id="domain"></span>
+        </div>
+        <div id="spinner" class="spinner"></div>
+      </div>
+      <!-- <p id="error"></p> -->
     </div>
-    <!-- <p id="error"></p> -->
-  </div>
 
-  <script>
+    <script>
     const serviceWorker = '/earthfast-sw.js';
 
     function fail(message) {
@@ -41,16 +43,15 @@
     }(Date.now());
 
     window.addEventListener('load', () => {
-      document.getElementById('domain').innerText = location.host;
+     document.getElementById('domain').innerText = location.host;
+     
+     if (!('serviceWorker' in navigator)) {
+       fail('This browser does not support the EarthFast Service Worker, please use a different native browser instead.');
+       return;
+     }
 
-      // lack of service worker support is a catastrophic failure
-      if (!('serviceWorker' in navigator)) {
-        fail('This browser does not support the Armada Network Service Worker, please use a native browser instead.');
-        return;
-      }
-
-      // listen for messages from the service worker
-      navigator.serviceWorker.addEventListener('message', event => {
+     // listen for messages from the service worker
+     navigator.serviceWorker.addEventListener('message', event => {
         const eventType = event.data.type ? event.data.type : event.data.action;
         console.log(`New service worker message received '${eventType}'`, event);
 
@@ -75,25 +76,47 @@
         }
       });
 
-      // register the service worker
-      navigator.serviceWorker.register(serviceWorker, { scope: '/' })
-        .then(reg => {
-          // A scenario exists where this landing page is being served and executed even though the
-          // service worker is already installed and active. It can occur, for instance, if a user
-          // does a hard refresh in their browser after the service worker has been installed.
-          //
-          // In this case we'll never get an INITIALIZED message, so a reload needs to be triggered
-          // manually. Since the service worker is active, we know the onFetch handler is installed
-          // and will be responsible for serving the reload request.
-          if (reg.active) {
-            reloadAfterWallTime(1000);
-          }
-        })
-        .catch(err => {
-          fail('Service worker registration failed: ' + err);
-        });
-    });
+     navigator.serviceWorker.register(serviceWorker, { scope: '/' })
+       .then(reg => {
+         console.log('Service Worker registration successful with scope: ', reg.scope);
+         
+         if (reg.installing) {
+           console.log('Service Worker installing');
+         } else if (reg.waiting) {
+           console.log('Service Worker installed');
+         } else if (reg.active) {
+           console.log('Service Worker active');
+         }
+
+         // A scenario exists where this landing page is being served and executed even though the
+         // service worker is already installed and active. It can occur, for instance, if a user
+         // does a hard refresh in their browser after the service worker has been installed.
+         //
+         // In this case we'll never get an INITIALIZED message, so a reload needs to be triggered
+         // manually. Since the service worker is active, we know the onFetch handler is installed
+         // and will be responsible for serving the reload request.
+         if (reg.active) {
+           console.log('Active service worker found, reloading page');
+           reloadAfterWallTime(1000);
+         } else {
+           // Wait for the service worker to become active
+           reg.addEventListener('updatefound', () => {
+             const newWorker = reg.installing;
+             newWorker.addEventListener('statechange', () => {
+               if (newWorker.state === 'activated') {
+                 console.log('Service Worker activated, reloading page');
+                 reloadAfterWallTime(1000);
+               }
+             });
+           });
+         }
+       })
+       .catch(err => {
+         fail('Service worker registration failed: ' + err);
+       });
+   });
+
   </script>
-</body>
+  </body>
 
 </html>
