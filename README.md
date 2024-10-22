@@ -1,7 +1,7 @@
 # EarthFast Service Worker
 
 ### Overview
-This doc is a combination of snippets taken from the Angular documentation as well as brief blurbs about files that have been updated and what EarthFast has layered on top.
+This doc provides an overview of the EarthFast Service Worker, its purpose, and how it extends the Angular service worker functionality.
 
 From [Angular docs](https://angular.io/guide/service-worker-intro)
 >At its simplest, a service worker is a script that runs in the web browser and manages caching for an application.
@@ -49,8 +49,34 @@ The main entry point is [src/service-worker/main.ts](src/service-worker/main.ts)
         ├── README.md - how to check the diff between upstream angular service worker and vendored service-worker/src/ files
 ```
 
+### How to Release the Service Worker
 
-### Angular Files Overview
+To release a new version of the EarthFast Service Worker:
+
+1. Ensure all changes are committed and pushed to the main branch.
+
+2. Go to "Releases" on the GitHub repository page and create a new release with the intended version (e.g., v0.12.0 for a minor version bump or v0.11.1 for a patch).
+   Note: The Docker container version will match the release version.
+
+3. Update all references to the service worker container in related projects:
+   - In the inexorable-node project: Update `src/Dockerfile.domain`
+   - Update the EarthFast landing site
+   - Check for any other projects that may reference the service worker version
+
+4. Commit and push these changes to their respective repositories.
+
+### Dev Guide
+To try to work on EarthFast Service Worker, the easiest way to test functionality is with tests. There's EarthFast specific unit tests as well as cypress E2E tests. It is possible to run the service worker locally as part of a full EarthFast stack, more info in the Dev Guides.
+
+All the functionality for building, testing is in package.json. Run `npm install` to install dependencies and `npm run` to list possible commands.
+
+### Useful Links
+- https://blog.angular-university.io/angular-service-worker/
+- https://angular.io/guide/service-worker-intro
+
+### Technical Documentation
+
+#### Angular Files Overview
 
 1. `adapter.ts` - This file defines an `Adapter` interface that abstracts interactions with the global scope and the clients. It allows the service worker to be platform-agnostic by providing a way to perform operations like fetching resources, scheduling tasks, and accessing caches without directly using browser APIs.
 
@@ -84,7 +110,7 @@ The main entry point is [src/service-worker/main.ts](src/service-worker/main.ts)
 
 16. `sha1.ts` - Implements a SHA-1 hashing function. It is used to generate hashes for assets and other content to ensure their integrity and to manage cache keys.
 
-### EarthFast Files & Overrides
+#### EarthFast Files & Overrides
 
 ##### api.ts
 The `ArmadaAPIClientImpl` class implements the `ArmadaAPIClient` interface, providing methods to fetch content and content node information from a network. It constructs URLs for API requests and appends query parameters, including a cache-busting parameter. It also handles errors and throws if the response from the network is not successful.
@@ -109,13 +135,3 @@ A set of functions are provided to create message objects related to various err
 
 ##### registry.ts
 The `NodeRegistry` interface and its implementations (`StaticNodeRegistry` and `DynamicNodeRegistry`) manage a list of content nodes. The `DynamicNodeRegistry` can refresh the list of nodes at a set interval, and both registries can provide a randomized list of nodes. The `HashableNodesResponse` class wraps a `NodesResponse` to make it compatible with the `majorityResult` function.
-
-
-### Dev Guide
-To try to work on EarthFast Service Worker, the easiest way to test functionality is with tests. There's EarthFast specific unit tests as well as cypress E2E tests. It is possible to run the service worker locally as part of a full EarthFast stack, more info in the Dev Guides.
-
-All the functionality for building, testing is in package.json. Run `npm install` to install dependencies and `npm run` to list possible commands.
-
-### Useful Links
-- https://blog.angular-university.io/angular-service-worker/
-- https://angular.io/guide/service-worker-intro
