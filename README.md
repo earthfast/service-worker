@@ -1,7 +1,7 @@
 # EarthFast Service Worker
 
 ### Overview
-This doc is a combination of snippets taken from the Angular documentation as well as brief blurbs about files that have been updated and what EarthFast has layered on top.
+This doc provides an overview of the EarthFast Service Worker, its purpose, and how it extends the Angular service worker functionality.
 
 From [Angular docs](https://angular.io/guide/service-worker-intro)
 >At its simplest, a service worker is a script that runs in the web browser and manages caching for an application.
@@ -47,10 +47,38 @@ The main entry point is [src/service-worker/main.ts](src/service-worker/main.ts)
         └── worker - vendored angular code
         ├── COMMIT - stores the commit that service worker was vendored from
         ├── README.md - how to check the diff between upstream angular service worker and vendored service-worker/src/ files
-```
+
+### How to Release the Service Worker
+
+To release a new version of the EarthFast Service Worker, follow these steps:
+
+1. Ensure all changes are committed and pushed to the main branch.
+2. Go to the "Releases" section on the GitHub repository page.
+3. Click on "Draft a new release".
+4. In the "Choose a tag" dropdown, create a new tag that increments the version number appropriately. For example, if the current version is v0.11.0, create v0.12.0 for a minor version bump, or v0.11.1 for a patch.
+5. Click "Generate release notes" to automatically populate the release description with changes since the last release.
+6. Review the generated notes and make any necessary edits or additions.
+7. Click "Publish release" to create the new release and tag.
+8. Navigate to the inexorable-node project repository.
+9. Update the service-worker version in `src/Dockerfile.domain` to match the new release version.
+10. Commit and push this change to the inexorable-node repository.
 
 
-### Angular Files Overview
+### Dev Guide
+To try to work on EarthFast Service Worker, the easiest way to test functionality is with tests. There's EarthFast specific unit tests as well as cypress E2E tests. It is possible to run the service worker locally as part of a full EarthFast stack, more info in the Dev Guides.
+
+All the functionality for building, testing is in package.json. Run `npm install` to install dependencies and `npm run` to list possible commands.
+
+### Useful Links
+- https://blog.angular-university.io/angular-service-worker/
+- https://angular.io/guide/service-worker-intro
+
+### Technical Documentation
+
+<details>
+<summary>Click to expand technical details</summary>
+
+#### Angular Files Overview
 
 1. `adapter.ts` - This file defines an `Adapter` interface that abstracts interactions with the global scope and the clients. It allows the service worker to be platform-agnostic by providing a way to perform operations like fetching resources, scheduling tasks, and accessing caches without directly using browser APIs.
 
@@ -84,7 +112,7 @@ The main entry point is [src/service-worker/main.ts](src/service-worker/main.ts)
 
 16. `sha1.ts` - Implements a SHA-1 hashing function. It is used to generate hashes for assets and other content to ensure their integrity and to manage cache keys.
 
-### EarthFast Files & Overrides
+#### EarthFast Files & Overrides
 
 ##### api.ts
 The `ArmadaAPIClientImpl` class implements the `ArmadaAPIClient` interface, providing methods to fetch content and content node information from a network. It constructs URLs for API requests and appends query parameters, including a cache-busting parameter. It also handles errors and throws if the response from the network is not successful.
@@ -110,12 +138,4 @@ A set of functions are provided to create message objects related to various err
 ##### registry.ts
 The `NodeRegistry` interface and its implementations (`StaticNodeRegistry` and `DynamicNodeRegistry`) manage a list of content nodes. The `DynamicNodeRegistry` can refresh the list of nodes at a set interval, and both registries can provide a randomized list of nodes. The `HashableNodesResponse` class wraps a `NodesResponse` to make it compatible with the `majorityResult` function.
 
-
-### Dev Guide
-To try to work on EarthFast Service Worker, the easiest way to test functionality is with tests. There's EarthFast specific unit tests as well as cypress E2E tests. It is possible to run the service worker locally as part of a full EarthFast stack, more info in the Dev Guides.
-
-All the functionality for building, testing is in package.json. Run `npm install` to install dependencies and `npm run` to list possible commands.
-
-### Useful Links
-- https://blog.angular-university.io/angular-service-worker/
-- https://angular.io/guide/service-worker-intro
+</details>
