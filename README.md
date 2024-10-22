@@ -47,6 +47,7 @@ The main entry point is [src/service-worker/main.ts](src/service-worker/main.ts)
         └── worker - vendored angular code
         ├── COMMIT - stores the commit that service worker was vendored from
         ├── README.md - how to check the diff between upstream angular service worker and vendored service-worker/src/ files
+```
 
 ### How to Release the Service Worker
 
