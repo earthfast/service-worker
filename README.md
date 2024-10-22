@@ -50,19 +50,19 @@ The main entry point is [src/service-worker/main.ts](src/service-worker/main.ts)
 
 ### How to Release the Service Worker
 
-To release a new version of the EarthFast Service Worker, follow these steps:
+To release a new version of the EarthFast Service Worker:
 
 1. Ensure all changes are committed and pushed to the main branch.
-2. Go to the "Releases" section on the GitHub repository page.
-3. Click on "Draft a new release".
-4. In the "Choose a tag" dropdown, create a new tag that increments the version number appropriately. For example, if the current version is v0.11.0, create v0.12.0 for a minor version bump, or v0.11.1 for a patch.
-5. Click "Generate release notes" to automatically populate the release description with changes since the last release.
-6. Review the generated notes and make any necessary edits or additions.
-7. Click "Publish release" to create the new release and tag.
-8. Navigate to the inexorable-node project repository.
-9. Update the service-worker version in `src/Dockerfile.domain` to match the new release version.
-10. Commit and push this change to the inexorable-node repository.
 
+2. Go to "Releases" on the GitHub repository page and create a new release with the intended version (e.g., v0.12.0 for a minor version bump or v0.11.1 for a patch).
+   Note: The Docker container version will match the release version.
+
+3. Update all references to the service worker container in related projects:
+   - In the inexorable-node project: Update `src/Dockerfile.domain`
+   - Update the EarthFast landing site
+   - Check for any other projects that may reference the service worker version
+
+4. Commit and push these changes to their respective repositories.
 
 ### Dev Guide
 To try to work on EarthFast Service Worker, the easiest way to test functionality is with tests. There's EarthFast specific unit tests as well as cypress E2E tests. It is possible to run the service worker locally as part of a full EarthFast stack, more info in the Dev Guides.
@@ -74,9 +74,6 @@ All the functionality for building, testing is in package.json. Run `npm install
 - https://angular.io/guide/service-worker-intro
 
 ### Technical Documentation
-
-<details>
-<summary>Click to expand technical details</summary>
 
 #### Angular Files Overview
 
@@ -137,5 +134,3 @@ A set of functions are provided to create message objects related to various err
 
 ##### registry.ts
 The `NodeRegistry` interface and its implementations (`StaticNodeRegistry` and `DynamicNodeRegistry`) manage a list of content nodes. The `DynamicNodeRegistry` can refresh the list of nodes at a set interval, and both registries can provide a randomized list of nodes. The `HashableNodesResponse` class wraps a `NodesResponse` to make it compatible with the `majorityResult` function.
-
-</details>
