@@ -24,12 +24,12 @@
   </div>
 
   <script>
-    const showSpinner = false //localStorage.getItem('showSpinner') !== 'false';
+    const showSpinner = localStorage.getItem('showSpinner') !== 'false';
     const serviceWorker = '/earthfast-sw.js';
 
     function fail(message) {
       console.error(message);
-      // document.getElementById('error').innerText = message;
+      document.body.classList.remove('hidden'); // show body content so error message is visible
       document.getElementById('spinner').classList.add('hidden');
       document.getElementById('description-text').innerHTML = '<span style="color: #FF4D4D; margin-right: 5px;">&#x2716;</span>Failed to load';
     }
