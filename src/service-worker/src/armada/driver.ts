@@ -207,7 +207,7 @@ export class ArmadaDriver extends Driver {
     const filenames = [ArmadaDriver.MANIFEST_FILENAME, ArmadaDriver.FALLBACK_MANIFEST_FILENAME];
     for (const filename of filenames) {
       try {
-        const resp = await this.apiClient.getContent(filename, node);
+        const resp = await this.apiClient.getContent(filename, node, undefined, true);
 
         if (resp.ok) {
           return resp.text();
