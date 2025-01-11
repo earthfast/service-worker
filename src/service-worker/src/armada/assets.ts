@@ -24,6 +24,7 @@ class ThrowingFetcher {
 
 export class ArmadaLazyAssetGroup extends LazyAssetGroup {
   static readonly MAX_ATTEMPTS = 5;
+  private static readonly TIMEOUT_MS = 100;
 
   constructor(
       adapter: Adapter, idle: IdleScheduler, config: AssetGroupConfig, hashes: Map<string, string>,
@@ -38,37 +39,91 @@ export class ArmadaLazyAssetGroup extends LazyAssetGroup {
 
   async fetchContent(url: string): Promise<Response> {
     const nodes = await this.registry.allNodes(true);
+    let successfulResponse: Response | null = null;
+    let completedRequests = 0;
+    const controllers: AbortController[] = [];
 
-    let i = 0;
-    let resp: Response|undefined;
-    for (; i < nodes.length && i < ArmadaLazyAssetGroup.MAX_ATTEMPTS; i++) {
-      const retry = (i > 0) ? nodes[i - 1] : undefined;
+    // Helper to start a request to a node
+    const startNodeRequest = async (node: string, index: number) => {
+      const controller = new AbortController();
+      controllers[index] = controller;
+
       try {
-        resp = await this.apiClient.getContent(url, nodes[i], retry);
+        const response = await this.apiClient.getContent(url, node, undefined, false, controller.signal);
+        
+        // Don't process if request was aborted
+        if (controller.signal.aborted) {
+          return;
+        }
+
+        // Check response validity
+        if (!response.ok) {
+          const msg = `Error fetching content: node=${node} resource=${url} status=${response.status}`;
+          await this.broadcaster.postMessage(MsgContentNodeFetchFailure(msg));
+          completedRequests++;
+          return;
+        }
+
+        // Validate hash
+        if (!await this.hashMatches(url, response.clone())) {
+          const msg = `Content hash mismatch: node=${node} resource=${url}`;
+          await this.broadcaster.postMessage(MsgContentChecksumMismatch(msg));
+          completedRequests++;
+          return;
+        }
+
+        // Store successful response and cancel other requests
+        successfulResponse = response;
+        // Cancel all other requests
+        controllers.forEach((ctrl, i) => {
+          if (i !== index && ctrl) {
+            ctrl.abort();
+          }
+        });
       } catch (err) {
-        const msg = `Error fetching content: node=${nodes[i]} resource=${url} error=${err}`;
-        await this.broadcaster.postMessage(MsgContentNodeFetchFailure(msg));
-        continue;
+        if (err.name !== 'AbortError') {
+          const msg = `Error fetching content: node=${node} resource=${url} error=${err}`;
+          await this.broadcaster.postMessage(MsgContentNodeFetchFailure(msg));
+          completedRequests++;
+        }
       }
+    };
 
-      if (!resp.ok) {
-        const msg =
-            `Error fetching content: node=${nodes[i]} resource=${url} status=${resp.status}`;
-        await this.broadcaster.postMessage(MsgContentNodeFetchFailure(msg));
-        continue;
-      }
+    // Create a promise that resolves when we get a successful response or all requests fail
+    const resultPromise = new Promise<Response>((resolve, reject) => {
+      let timeoutId: NodeJS.Timeout;
+      
+      const checkStatus = () => {
+        if (successfulResponse) {
+          clearTimeout(timeoutId);
+          resolve(successfulResponse);
+        } else if (completedRequests === nodes.length) {
+          clearTimeout(timeoutId);
+          reject(new SwContentNodesFetchFailureError(
+            `Failed to fetch content: resource=${url} attempts=${nodes.length}`,
+            undefined,
+            'All nodes failed'
+          ));
+        }
+      };
 
-      if (!await this.hashMatches(url, resp.clone())) {
-        const msg = `Content hash mismatch: node=${nodes[i]} resource=${url}`;
-        await this.broadcaster.postMessage(MsgContentChecksumMismatch(msg));
-        continue;
-      }
+      // Start first request
+      startNodeRequest(nodes[0], 0).then(checkStatus);
 
-      return resp;
-    }
+      // Start subsequent requests after timeouts
+      let currentIndex = 1;
+      const scheduleNext = () => {
+        if (currentIndex < nodes.length && !successfulResponse) {
+          startNodeRequest(nodes[currentIndex], currentIndex).then(checkStatus);
+          currentIndex++;
+          timeoutId = setTimeout(scheduleNext, ArmadaLazyAssetGroup.TIMEOUT_MS);
+        }
+      };
 
-    const msg = `Failed to fetch content: resource=${url} attempts=${i}`;
-    throw new SwContentNodesFetchFailureError(msg, resp?.status, resp?.statusText);
+      timeoutId = setTimeout(scheduleNext, ArmadaLazyAssetGroup.TIMEOUT_MS);
+    });
+
+    return resultPromise;
   }
 
   /**
