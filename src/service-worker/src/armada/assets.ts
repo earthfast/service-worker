@@ -24,7 +24,7 @@ class ThrowingFetcher {
 
 export class ArmadaLazyAssetGroup extends LazyAssetGroup {
   static readonly MAX_ATTEMPTS = 5;
-  private static readonly TIMEOUT_MS = 100;
+  private static readonly TIMEOUT_MS = 250;
 
   constructor(
       adapter: Adapter, idle: IdleScheduler, config: AssetGroupConfig, hashes: Map<string, string>,
@@ -43,13 +43,22 @@ export class ArmadaLazyAssetGroup extends LazyAssetGroup {
     let completedRequests = 0;
     const controllers: AbortController[] = [];
 
+    // Helper to abort all controllers except the specified index
+    const abortOtherControllers = (exceptIndex?: number) => {
+      controllers.forEach((ctrl, i) => {
+        if (ctrl && (exceptIndex === undefined || i !== exceptIndex)) {
+          ctrl.abort();
+        }
+      });
+    };
+
     // Helper to start a request to a node
     const startNodeRequest = async (node: string, index: number) => {
       const controller = new AbortController();
       controllers[index] = controller;
 
       try {
-        const response = await this.apiClient.getContent(url, node, undefined, false, controller.signal);
+        const response = await this.apiClient.getContent(url, node, undefined, false);
         
         // Don't process if request was aborted
         if (controller.signal.aborted) {
@@ -74,12 +83,7 @@ export class ArmadaLazyAssetGroup extends LazyAssetGroup {
 
         // Store successful response and cancel other requests
         successfulResponse = response;
-        // Cancel all other requests
-        controllers.forEach((ctrl, i) => {
-          if (i !== index && ctrl) {
-            ctrl.abort();
-          }
-        });
+        abortOtherControllers(index);
       } catch (err) {
         if (err.name !== 'AbortError') {
           const msg = `Error fetching content: node=${node} resource=${url} error=${err}`;
@@ -96,9 +100,11 @@ export class ArmadaLazyAssetGroup extends LazyAssetGroup {
       const checkStatus = () => {
         if (successfulResponse) {
           clearTimeout(timeoutId);
+          abortOtherControllers();
           resolve(successfulResponse);
         } else if (completedRequests === nodes.length) {
           clearTimeout(timeoutId);
+          abortOtherControllers();
           reject(new SwContentNodesFetchFailureError(
             `Failed to fetch content: resource=${url} attempts=${nodes.length}`,
             undefined,
@@ -123,7 +129,12 @@ export class ArmadaLazyAssetGroup extends LazyAssetGroup {
       timeoutId = setTimeout(scheduleNext, ArmadaLazyAssetGroup.TIMEOUT_MS);
     });
 
-    return resultPromise;
+    try {
+      return await resultPromise;
+    } finally {
+      // Ensure all controllers are aborted when the promise settles
+      abortOtherControllers();
+    }
   }
 
   /**

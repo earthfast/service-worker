@@ -1,7 +1,7 @@
 import {Adapter} from '../adapter';
 
 export interface ContentAPIClient {
-  getContent(resource: string, host: string, retry?: string, cacheBust?: boolean, signal?: AbortSignal): Promise<Response>;
+  getContent(resource: string, host: string, retry?: string, cacheBust?: boolean): Promise<Response>;
 }
 
 export type TopologyAPIClient = {
@@ -31,8 +31,7 @@ export class ArmadaAPIClientImpl implements ArmadaAPIClient {
     resource: string, 
     host: string, 
     retry?: string, 
-    cacheBust?: boolean,
-    signal?: AbortSignal
+    cacheBust?: boolean
   ): Promise<Response> {
     const url = new URL('/v1/content', `${this.protocol}//${host}`);
     url.searchParams.append('project_id', this.projectId);
@@ -44,7 +43,7 @@ export class ArmadaAPIClientImpl implements ArmadaAPIClient {
       url.searchParams.append('retry', retry);
     }
 
-    const req = this.adapter.newRequest(url.toString(), { signal });
+    const req = this.adapter.newRequest(url.toString());
     return this.fetcher.fetch(req);
   }
 
