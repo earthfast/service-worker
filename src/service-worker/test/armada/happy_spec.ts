@@ -1402,7 +1402,7 @@ describe('Driver', () => {
       driver =
           new Driver(scope, scope, new CacheDatabase(scope), registry, apiClient, webcrypto.subtle);
 
-      expect(await makeRequest(scope, '/foo.txt')).toEqual('');
+      expect(await makeRequest(scope, '/foo.txt')).toEqual(null);
     });
 
     it('enters degraded mode when something goes wrong with the latest version', async () => {
@@ -1429,7 +1429,7 @@ describe('Driver', () => {
       // Trying to fetch `bar.txt` (which has an invalid hash) should invalidate the latest
       // version, enter degraded mode and "forget" clients that are on that version (i.e.
       // `client1`).
-      expect(await makeRequest(scope, '/bar.txt', 'client1')).toBe('');
+      expect(await makeRequest(scope, '/bar.txt', 'client1')).toBe(null);
       brokenLazyServer.assertSawRequestFor('/bar.txt');
       brokenLazyServer.clearRequests();
 
@@ -1479,7 +1479,7 @@ describe('Driver', () => {
          // Trying to fetch `bar.txt` (which has an invalid hash on the broken version) from
          // `client2` should invalidate that particular version (which is not the latest one).
          // (NOTE: Since the file is not cached locally, it is fetched from the server.)
-         expect(await makeRequest(scope, '/bar.txt', 'client2')).toBe('');
+         expect(await makeRequest(scope, '/bar.txt', 'client2')).toBe(null);
          expect(driver.state).toBe(DriverReadyState.NORMAL);
          serverUpdate.clearRequests();
 

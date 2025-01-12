@@ -8,7 +8,7 @@ import {MsgAny} from '../msg';
 import {sha1Binary} from '../sha1';
 
 import {ContentAPIClient} from './api';
-import {SwContentNodesFetchFailureError} from './error';
+import {SwContentNodesFetchFailureError, SwNoArmadaNodes} from './error';
 import {MsgContentChecksumMismatch, MsgContentNodeFetchFailure} from './msg';
 import {NodeRegistry} from './registry';
 
@@ -23,7 +23,7 @@ class ThrowingFetcher {
 }
 
 export class ArmadaLazyAssetGroup extends LazyAssetGroup {
-  static readonly MAX_ATTEMPTS = 5;
+  static readonly TIMEOUT_MS = 200;
 
   constructor(
       adapter: Adapter, idle: IdleScheduler, config: AssetGroupConfig, hashes: Map<string, string>,
@@ -36,39 +36,134 @@ export class ArmadaLazyAssetGroup extends LazyAssetGroup {
     super(new ThrowingFetcher(), adapter, idle, config, hashes, db, cacheNamePrefix);
   }
 
+  /**
+   * Fetches content from available nodes with the following behavior:
+   * 1. Starts with the first node immediately
+   * 2. Subsequent nodes are tried after TIMEOUT_MS delay if needed
+   * 3. Requests continue until either:
+   *    - A valid response is received (correct hash)
+   *    - All nodes have been tried and failed
+   * 
+   * Error handling:
+   * - Failed requests (non-200, hash mismatch) increment completedRequests
+   * - Aborted requests are ignored in the completion count
+   * - All errors are broadcast for monitoring
+   * 
+   * Abort behavior:
+   * - When a valid response is received, all other pending requests are aborted
+   * - When all nodes fail, all pending requests are aborted
+   * - All controllers are cleaned up in the finally block
+   * 
+   * @param url The URL of the content to fetch
+   * @returns A Response object with the requested content
+   * @throws SwContentNodesFetchFailureError if all nodes fail
+   */
   async fetchContent(url: string): Promise<Response> {
     const nodes = await this.registry.allNodes(true);
 
-    let i = 0;
-    let resp: Response|undefined;
-    for (; i < nodes.length && i < ArmadaLazyAssetGroup.MAX_ATTEMPTS; i++) {
-      const retry = (i > 0) ? nodes[i - 1] : undefined;
-      try {
-        resp = await this.apiClient.getContent(url, nodes[i], retry);
-      } catch (err) {
-        const msg = `Error fetching content: node=${nodes[i]} resource=${url} error=${err}`;
-        await this.broadcaster.postMessage(MsgContentNodeFetchFailure(msg));
-        continue;
-      }
-
-      if (!resp.ok) {
-        const msg =
-            `Error fetching content: node=${nodes[i]} resource=${url} status=${resp.status}`;
-        await this.broadcaster.postMessage(MsgContentNodeFetchFailure(msg));
-        continue;
-      }
-
-      if (!await this.hashMatches(url, resp.clone())) {
-        const msg = `Content hash mismatch: node=${nodes[i]} resource=${url}`;
-        await this.broadcaster.postMessage(MsgContentChecksumMismatch(msg));
-        continue;
-      }
-
-      return resp;
+    if (nodes.length === 0) {
+      throw new SwNoArmadaNodes(`No nodes available`);
     }
 
-    const msg = `Failed to fetch content: resource=${url} attempts=${i}`;
-    throw new SwContentNodesFetchFailureError(msg, resp?.status, resp?.statusText);
+    let successfulResponse: Response | null = null;
+    let completedRequests = 0;
+    const controllers: AbortController[] = [];
+
+    // Helper to abort all controllers except the specified index
+    const abortOtherControllers = (exceptIndex?: number) => {
+      controllers.forEach((ctrl, i) => {
+        if (ctrl && (exceptIndex === undefined || i !== exceptIndex)) {
+          ctrl.abort();
+        }
+      });
+    };
+
+    // Helper to start a request to a node
+    // Each request gets its own AbortController for individual cancellation
+    const startNodeRequest = async (node: string, index: number) => {
+      const controller = new AbortController();
+      controllers[index] = controller;
+
+      try {
+        const response = await this.apiClient.getContent(url, node, undefined, false);
+        
+        // Early return if this request was aborted (don't process response)
+        if (controller.signal.aborted) {
+          return;
+        }
+
+        // Track failed responses (non-200) and broadcast error
+        if (!response.ok) {
+          const msg = `Error fetching content: node=${node} resource=${url} status=${response.status}`;
+          await this.broadcaster.postMessage(MsgContentNodeFetchFailure(msg));
+          completedRequests++;
+          return;
+        }
+
+        // Validate hash and track/broadcast failures
+        if (!await this.hashMatches(url, response.clone())) {
+          const msg = `Content hash mismatch: node=${node} resource=${url}`;
+          await this.broadcaster.postMessage(MsgContentChecksumMismatch(msg));
+          completedRequests++;
+          return;
+        }
+
+        // Valid response received - store it and abort other requests
+        successfulResponse = response;
+        abortOtherControllers(index);
+      } catch (err) {
+        // Only count non-abort errors towards completion
+        if (err.name !== 'AbortError') {
+          const msg = `Error fetching content: node=${node} resource=${url} error=${err}`;
+          await this.broadcaster.postMessage(MsgContentNodeFetchFailure(msg));
+          completedRequests++;
+        }
+      }
+    };
+
+    // Main promise that coordinates the requests and their timing
+    const resultPromise = new Promise<Response>((resolve, reject) => {
+      let timeoutId: NodeJS.Timeout;
+      
+      // Helper to check if we're done (success or all failed)
+      const checkStatus = () => {
+        if (successfulResponse) {
+          clearTimeout(timeoutId);
+          abortOtherControllers();
+          resolve(successfulResponse);
+        } else if (completedRequests === nodes.length) {
+          clearTimeout(timeoutId);
+          abortOtherControllers();
+          reject(new SwContentNodesFetchFailureError(
+            `Failed to fetch content: resource=${url} attempts=${nodes.length}`,
+            undefined,
+            'All nodes failed'
+          ));
+        }
+      };
+
+      // Start first request immediately
+      startNodeRequest(nodes[0], 0).then(checkStatus);
+
+      // Schedule subsequent requests with delays
+      let currentIndex = 1;
+      const scheduleNext = () => {
+        if (currentIndex < nodes.length && !successfulResponse) {
+          startNodeRequest(nodes[currentIndex], currentIndex).then(checkStatus);
+          currentIndex++;
+          timeoutId = setTimeout(scheduleNext, ArmadaLazyAssetGroup.TIMEOUT_MS);
+        }
+      };
+
+      timeoutId = setTimeout(scheduleNext, ArmadaLazyAssetGroup.TIMEOUT_MS);
+    });
+
+    try {
+      return await resultPromise;
+    } finally {
+      // Ensure all controllers are cleaned up regardless of outcome
+      abortOtherControllers();
+    }
   }
 
   /**
