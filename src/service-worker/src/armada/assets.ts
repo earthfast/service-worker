@@ -8,7 +8,7 @@ import {MsgAny} from '../msg';
 import {sha1Binary} from '../sha1';
 
 import {ContentAPIClient} from './api';
-import {SwContentNodesFetchFailureError} from './error';
+import {SwContentNodesFetchFailureError, SwNoArmadaNodes} from './error';
 import {MsgContentChecksumMismatch, MsgContentNodeFetchFailure} from './msg';
 import {NodeRegistry} from './registry';
 
@@ -23,7 +23,7 @@ class ThrowingFetcher {
 }
 
 export class ArmadaLazyAssetGroup extends LazyAssetGroup {
-  private static readonly TIMEOUT_MS = 250;
+  static readonly TIMEOUT_MS = 200;
 
   constructor(
       adapter: Adapter, idle: IdleScheduler, config: AssetGroupConfig, hashes: Map<string, string>,
@@ -60,6 +60,11 @@ export class ArmadaLazyAssetGroup extends LazyAssetGroup {
    */
   async fetchContent(url: string): Promise<Response> {
     const nodes = await this.registry.allNodes(true);
+
+    if (nodes.length === 0) {
+      throw new SwNoArmadaNodes(`No nodes available`);
+    }
+
     let successfulResponse: Response | null = null;
     let completedRequests = 0;
     const controllers: AbortController[] = [];

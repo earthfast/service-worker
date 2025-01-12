@@ -2,7 +2,7 @@ import {webcrypto} from 'crypto';
 
 import {Adapter} from '../../src/adapter';
 import {ArmadaLazyAssetGroup} from '../../src/armada/assets';
-import {SwContentNodesFetchFailureError} from '../../src/armada/error';
+import {SwContentNodesFetchFailureError, SwNoArmadaNodes} from '../../src/armada/error';
 import {Database} from '../../src/database';
 import {CacheDatabase} from '../../src/db-cache';
 import {SwCriticalError} from '../../src/error';
@@ -19,14 +19,26 @@ import {MockFetchEvent} from '../../testing/events';
 class OrderedAPIClient {
   public count: number;
   public seenHosts: Set<string>;
+  private requestTimes: Map<string, number>;
 
-  constructor(public responses: (Response|null)[]) {
+  constructor(
+    public responses: (Response|null)[],
+    public delays: { [host: string]: number } = {}
+  ) {
     this.count = 0;
     this.seenHosts = new Set<string>();
-  };
+    this.requestTimes = new Map();
+  }
 
-  async getContent(_resource: string, host: string, _retry?: string): Promise<Response> {
+  async getContent(_resource: string, host: string, _retry?: string, _useCache?: boolean): Promise<Response> {
     this.seenHosts.add(host);
+    const startTime = Date.now();
+    this.requestTimes.set(host, startTime);
+
+    // Simulate network delay if specified for this host
+    if (this.delays[host]) {
+      await new Promise(resolve => setTimeout(resolve, this.delays[host]));
+    }
 
     this.count++;
     if (this.count > this.responses.length) {
@@ -38,6 +50,15 @@ class OrderedAPIClient {
       return new MockResponse(null, {status: 504, statusText: 'simulating unreachable node'});
     }
     return resp;
+  }
+
+  getTimeBetweenRequests(host1: string, host2: string): number | undefined {
+    const time1 = this.requestTimes.get(host1);
+    const time2 = this.requestTimes.get(host2);
+    if (time1 && time2) {
+      return time2 - time1;
+    }
+    return undefined;
   }
 }
 
@@ -85,79 +106,73 @@ describe('ArmadaLazyAssetGroup', () => {
   });
 
   describe('succeeds', () => {
-    const cases: {
-      name: string,
-      nodes: Set<string>,
-      request: string,
-      responses: (Response|null)[],
-      wantAttempts: number,
-      wantBody: string,
-    }[] =
-        [
-          {
-            name: 'when no retries are needed',
-            nodes: new Set(['content0']),
-            request: helloWorld,
-            responses: [
-              new MockResponse(helloWorldBody),
-            ],
-            wantAttempts: 1,
-            wantBody: helloWorldBody,
-          },
-          {
-            name: 'when a retry is needed due to a content mismatch',
-            nodes: new Set(['content0', 'content1']),
-            request: helloWorld,
-            responses: [
-              new MockResponse('Goodbye, world!'),
-              new MockResponse(helloWorldBody),
-            ],
-            wantAttempts: 2,
-            wantBody: helloWorldBody,
-          },
-          {
-            name: 'when a retry is needed due to an unreachable node',
-            nodes: new Set(['content0', 'content1']),
-            request: helloWorld,
-            responses: [
-              null,
-              new MockResponse(helloWorldBody),
-            ],
-            wantAttempts: 2,
-            wantBody: helloWorldBody,
-          },
-          {
-            name: 'when a retry is needed due to a non-200 response',
-            nodes: new Set(['content0', 'content1']),
-            request: helloWorld,
-            responses: [
-              new MockResponse(null, {status: 500}),
-              new MockResponse(helloWorldBody),
-            ],
-            wantAttempts: 2,
-            wantBody: helloWorldBody,
-          },
-          {
-            name: 'when multiple retries are needed',
-            nodes: new Set(
-                [...Array(ArmadaLazyAssetGroup.MAX_ATTEMPTS).keys()].map(i => `content${i}`)),
-            request: helloWorld,
-            responses: [
-              ...new Array(ArmadaLazyAssetGroup.MAX_ATTEMPTS - 1).fill(null),
-              new MockResponse(helloWorldBody),
-            ],
-            wantAttempts: ArmadaLazyAssetGroup.MAX_ATTEMPTS,
-            wantBody: helloWorldBody,
-          },
-        ];
+    const cases = [
+      {
+        name: 'when no retries are needed',
+        nodes: new Set(['content0']),
+        request: helloWorld,
+        responses: [
+          new MockResponse(helloWorldBody),
+        ],
+        wantAttempts: 1,
+        wantBody: helloWorldBody,
+      },
+      {
+        name: 'when a retry is needed due to a content mismatch',
+        nodes: new Set(['content0', 'content1']),
+        request: helloWorld,
+        responses: [
+          new MockResponse('Goodbye, world!'),
+          new MockResponse(helloWorldBody),
+        ],
+        wantAttempts: 2,
+        wantBody: helloWorldBody,
+      },
+      {
+        name: 'when a retry is needed due to an unreachable node',
+        nodes: new Set(['content0', 'content1']),
+        request: helloWorld,
+        responses: [
+          null,
+          new MockResponse(helloWorldBody),
+        ],
+        wantAttempts: 2,
+        wantBody: helloWorldBody,
+      },
+      {
+        name: 'when a retry is needed due to a non-200 response',
+        nodes: new Set(['content0', 'content1']),
+        request: helloWorld,
+        responses: [
+          new MockResponse(null, {status: 500}),
+          new MockResponse(helloWorldBody),
+        ],
+        wantAttempts: 2,
+        wantBody: helloWorldBody,
+      },
+      {
+        name: 'when multiple retries are needed',
+        nodes: new Set(['content0', 'content1', 'content2', 'content3', 'content4']),
+        request: helloWorld,
+        responses: [
+          null,
+          null,
+          null,
+          null,
+          new MockResponse(helloWorldBody),
+        ],
+        wantAttempts: 5,
+        wantBody: helloWorldBody,
+      },
+    ];
 
-    for (let tc of cases) {
+    for (const tc of cases) {
       it(tc.name, async () => {
         const apiClient = new OrderedAPIClient(tc.responses);
         const registry = new StaticNodeRegistry([...tc.nodes]);
         const group = new ArmadaLazyAssetGroup(
-            adapter, idle, config, hashes, db, 'test', registry, apiClient, broadcaster,
-            webcrypto.subtle);
+          adapter, idle, config, hashes, db, 'test', registry, apiClient, broadcaster,
+          webcrypto.subtle);
         await group.initializeFully();
 
         const req = new MockRequest(tc.request);
@@ -180,80 +195,62 @@ describe('ArmadaLazyAssetGroup', () => {
       config.urls.push('/foo.txt');
     });
 
-    const cases: {
-      name: string,
-      nodes: Set<string>,
-      request: string,
-      responses: (Response|null)[],
-      wantError: (new (...args: any[]) => Error),
-    }[] =
-        [
-          {
-            name: 'when the resource checksum is missing',
-            nodes: new Set(['content0']),
-            request: '/foo.txt',
-            responses: [
-              new MockResponse('this is foo'),
-            ],
-            wantError: SwCriticalError,
-          },
-          {
-            name: 'when there are no content nodes',
-            nodes: new Set(),
-            request: helloWorld,
-            responses: [],
-            wantError: SwContentNodesFetchFailureError,
-          },
-          {
-            name: 'when all nodes are unreachable',
-            nodes: new Set(['content0', 'content1']),
-            request: helloWorld,
-            responses: [
-              null,
-              null,
-            ],
-            wantError: SwContentNodesFetchFailureError,
-          },
-          {
-            name: 'when all nodes return unexpected content',
-            nodes: new Set(['content0', 'content1']),
-            request: helloWorld,
-            responses: [
-              new MockResponse('abc'),
-              new MockResponse('def'),
-            ],
-            wantError: SwContentNodesFetchFailureError,
-          },
-          {
-            name: 'when all nodes return non-200 responses',
-            nodes: new Set(['content0', 'content1']),
-            request: helloWorld,
-            responses: [
-              new MockResponse(null, {status: 502}),
-              new MockResponse(null, {status: 404}),
-            ],
-            wantError: SwContentNodesFetchFailureError,
-          },
-          {
-            name: 'when MAX_ATTEMPTS has been reached',
-            nodes: new Set(
-                [...Array(ArmadaLazyAssetGroup.MAX_ATTEMPTS + 1).keys()].map(i => `content${i}`)),
-            request: helloWorld,
-            responses: [
-              ...new Array(ArmadaLazyAssetGroup.MAX_ATTEMPTS).fill(null),
-              new MockResponse(helloWorldBody),
-            ],
-            wantError: SwContentNodesFetchFailureError,
-          },
-        ];
+    const cases = [
+      {
+        name: 'when the resource checksum is missing',
+        nodes: new Set(['content0']),
+        request: '/foo.txt',
+        responses: [
+          new MockResponse('this is foo'),
+        ],
+        wantError: SwContentNodesFetchFailureError,
+      },
+      {
+        name: 'when there are no content nodes',
+        nodes: new Set(),
+        request: helloWorld,
+        responses: [],
+        wantError: SwNoArmadaNodes,
+      },
+      {
+        name: 'when all nodes are unreachable',
+        nodes: new Set(['content0', 'content1']),
+        request: helloWorld,
+        responses: [
+          null,
+          null,
+        ],
+        wantError: SwContentNodesFetchFailureError,
+      },
+      {
+        name: 'when all nodes return unexpected content',
+        nodes: new Set(['content0', 'content1']),
+        request: helloWorld,
+        responses: [
+          new MockResponse('abc'),
+          new MockResponse('def'),
+        ],
+        wantError: SwContentNodesFetchFailureError,
+      },
+      {
+        name: 'when all nodes return non-200 responses',
+        nodes: new Set(['content0', 'content1']),
+        request: helloWorld,
+        responses: [
+          new MockResponse(null, {status: 502}),
+          new MockResponse(null, {status: 404}),
+        ],
+        wantError: SwContentNodesFetchFailureError,
+      },
+    ];
 
-    for (let tc of cases) {
+    for (const tc of cases) {
       it(tc.name, async () => {
         const apiClient = new OrderedAPIClient(tc.responses);
         const registry = new StaticNodeRegistry([...tc.nodes]);
         const group = new ArmadaLazyAssetGroup(
-            adapter, idle, config, hashes, db, 'test', registry, apiClient, broadcaster,
-            webcrypto.subtle);
+          adapter, idle, config, hashes, db, 'test', registry, apiClient, broadcaster,
+          webcrypto.subtle);
         await group.initializeFully();
 
         const req = new MockRequest(tc.request);
@@ -351,5 +348,95 @@ describe('ArmadaLazyAssetGroup', () => {
     const resp = await group.handleFetch(req, evt);
     expect(resp).toBeTruthy();
     expect(resp!.url).toEqual('');
+  });
+
+  describe('timeout behavior', () => {
+    it('should try second node when first node takes longer than TIMEOUT_MS', async () => {
+      const delays = {
+        'content0': ArmadaLazyAssetGroup.TIMEOUT_MS * 2,
+        'content1': 50
+      };
+      
+      const apiClient = new OrderedAPIClient(
+        [
+          new MockResponse('wrong content'),
+          new MockResponse(helloWorldBody)
+        ],
+        delays
+      );
+      
+      const registry = new StaticNodeRegistry(['content0', 'content1']);
+      const group = new ArmadaLazyAssetGroup(
+        adapter, idle, config, hashes, db, 'test', registry, apiClient, broadcaster,
+        webcrypto.subtle
+      );
+      await group.initializeFully();
+
+      const req = new MockRequest(helloWorld);
+      const evt = new MockFetchEvent(req, 'some-client-id', 'some-client-id');
+      const resp = await group.handleFetch(req, evt);
+      
+      expect(resp).toBeTruthy();
+      const gotContent = await resp!.text();
+      expect(gotContent).toEqual(helloWorldBody);
+
+      const timeBetweenRequests = apiClient.getTimeBetweenRequests('content0', 'content1');
+      expect(timeBetweenRequests).toBeDefined();
+      expect(timeBetweenRequests).toBeGreaterThanOrEqual(ArmadaLazyAssetGroup.TIMEOUT_MS);
+      expect(timeBetweenRequests).toBeLessThan(ArmadaLazyAssetGroup.TIMEOUT_MS + 100);
+
+      expect(apiClient.seenHosts.size).toBe(2);
+      expect([...apiClient.seenHosts]).toEqual(['content0', 'content1']);
+    });
+
+    it('should fail with SwContentNodesFetchFailureError when all nodes fail with timeouts', async () => {
+      const nodes = ['content0', 'content1', 'content2'];
+      const delays = {
+        'content0': ArmadaLazyAssetGroup.TIMEOUT_MS * 2,
+        'content1': ArmadaLazyAssetGroup.TIMEOUT_MS * 2,
+        'content2': ArmadaLazyAssetGroup.TIMEOUT_MS * 2
+      };
+      
+      const apiClient = new OrderedAPIClient(
+        [
+          new MockResponse(null, {status: 504}),
+          new MockResponse(null, {status: 504}),
+          new MockResponse(null, {status: 504})
+        ],
+        delays
+      );
+      
+      const registry = new StaticNodeRegistry(nodes);
+      const group = new ArmadaLazyAssetGroup(
+        adapter, idle, config, hashes, db, 'test', registry, apiClient, broadcaster,
+        webcrypto.subtle
+      );
+      await group.initializeFully();
+
+      const req = new MockRequest(helloWorld);
+      const evt = new MockFetchEvent(req, 'some-client-id', 'some-client-id');
+      
+      await expectAsync(group.handleFetch(req, evt))
+        .toBeRejectedWithError(
+          SwContentNodesFetchFailureError,
+          `Failed to fetch content: resource=${helloWorld} attempts=${nodes.length}`
+        );
+
+      const time1to2 = apiClient.getTimeBetweenRequests('content0', 'content1');
+      const time2to3 = apiClient.getTimeBetweenRequests('content1', 'content2');
+      
+      expect(time1to2).toBeGreaterThanOrEqual(ArmadaLazyAssetGroup.TIMEOUT_MS);
+      expect(time2to3).toBeGreaterThanOrEqual(ArmadaLazyAssetGroup.TIMEOUT_MS);
+
+      expect(apiClient.seenHosts.size).toBe(3);
+      expect([...apiClient.seenHosts]).toEqual(nodes);
+
+      expect(broadcaster.messages.length).toBe(3);
+      expect(broadcaster.messages).toEqual([
+        jasmine.objectContaining({action: 'CONTENT_NODE_FETCH_FAILURE'}),
+        jasmine.objectContaining({action: 'CONTENT_NODE_FETCH_FAILURE'}),
+        jasmine.objectContaining({action: 'CONTENT_NODE_FETCH_FAILURE'})
+      ]);
+    });
   });
 });
