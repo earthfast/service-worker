@@ -23,7 +23,6 @@ class ThrowingFetcher {
 }
 
 export class ArmadaLazyAssetGroup extends LazyAssetGroup {
-  static readonly MAX_ATTEMPTS = 5;
   private static readonly TIMEOUT_MS = 250;
 
   constructor(
@@ -37,6 +36,28 @@ export class ArmadaLazyAssetGroup extends LazyAssetGroup {
     super(new ThrowingFetcher(), adapter, idle, config, hashes, db, cacheNamePrefix);
   }
 
+  /**
+   * Fetches content from available nodes with the following behavior:
+   * 1. Starts with the first node immediately
+   * 2. Subsequent nodes are tried after TIMEOUT_MS delay if needed
+   * 3. Requests continue until either:
+   *    - A valid response is received (correct hash)
+   *    - All nodes have been tried and failed
+   * 
+   * Error handling:
+   * - Failed requests (non-200, hash mismatch) increment completedRequests
+   * - Aborted requests are ignored in the completion count
+   * - All errors are broadcast for monitoring
+   * 
+   * Abort behavior:
+   * - When a valid response is received, all other pending requests are aborted
+   * - When all nodes fail, all pending requests are aborted
+   * - All controllers are cleaned up in the finally block
+   * 
+   * @param url The URL of the content to fetch
+   * @returns A Response object with the requested content
+   * @throws SwContentNodesFetchFailureError if all nodes fail
+   */
   async fetchContent(url: string): Promise<Response> {
     const nodes = await this.registry.allNodes(true);
     let successfulResponse: Response | null = null;
@@ -53,6 +74,7 @@ export class ArmadaLazyAssetGroup extends LazyAssetGroup {
     };
 
     // Helper to start a request to a node
+    // Each request gets its own AbortController for individual cancellation
     const startNodeRequest = async (node: string, index: number) => {
       const controller = new AbortController();
       controllers[index] = controller;
@@ -60,12 +82,12 @@ export class ArmadaLazyAssetGroup extends LazyAssetGroup {
       try {
         const response = await this.apiClient.getContent(url, node, undefined, false);
         
-        // Don't process if request was aborted
+        // Early return if this request was aborted (don't process response)
         if (controller.signal.aborted) {
           return;
         }
 
-        // Check response validity
+        // Track failed responses (non-200) and broadcast error
         if (!response.ok) {
           const msg = `Error fetching content: node=${node} resource=${url} status=${response.status}`;
           await this.broadcaster.postMessage(MsgContentNodeFetchFailure(msg));
@@ -73,7 +95,7 @@ export class ArmadaLazyAssetGroup extends LazyAssetGroup {
           return;
         }
 
-        // Validate hash
+        // Validate hash and track/broadcast failures
         if (!await this.hashMatches(url, response.clone())) {
           const msg = `Content hash mismatch: node=${node} resource=${url}`;
           await this.broadcaster.postMessage(MsgContentChecksumMismatch(msg));
@@ -81,10 +103,11 @@ export class ArmadaLazyAssetGroup extends LazyAssetGroup {
           return;
         }
 
-        // Store successful response and cancel other requests
+        // Valid response received - store it and abort other requests
         successfulResponse = response;
         abortOtherControllers(index);
       } catch (err) {
+        // Only count non-abort errors towards completion
         if (err.name !== 'AbortError') {
           const msg = `Error fetching content: node=${node} resource=${url} error=${err}`;
           await this.broadcaster.postMessage(MsgContentNodeFetchFailure(msg));
@@ -93,10 +116,11 @@ export class ArmadaLazyAssetGroup extends LazyAssetGroup {
       }
     };
 
-    // Create a promise that resolves when we get a successful response or all requests fail
+    // Main promise that coordinates the requests and their timing
     const resultPromise = new Promise<Response>((resolve, reject) => {
       let timeoutId: NodeJS.Timeout;
       
+      // Helper to check if we're done (success or all failed)
       const checkStatus = () => {
         if (successfulResponse) {
           clearTimeout(timeoutId);
@@ -113,10 +137,10 @@ export class ArmadaLazyAssetGroup extends LazyAssetGroup {
         }
       };
 
-      // Start first request
+      // Start first request immediately
       startNodeRequest(nodes[0], 0).then(checkStatus);
 
-      // Start subsequent requests after timeouts
+      // Schedule subsequent requests with delays
       let currentIndex = 1;
       const scheduleNext = () => {
         if (currentIndex < nodes.length && !successfulResponse) {
@@ -132,7 +156,7 @@ export class ArmadaLazyAssetGroup extends LazyAssetGroup {
     try {
       return await resultPromise;
     } finally {
-      // Ensure all controllers are aborted when the promise settles
+      // Ensure all controllers are cleaned up regardless of outcome
       abortOtherControllers();
     }
   }
