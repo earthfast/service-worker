@@ -1,6 +1,6 @@
 import {Adapter} from '../adapter';
 
-export interface ContentAPIClient {
+export type ContentAPIClient = {
   getContent(resource: string, host: string, retry?: string, cacheBust?: boolean): Promise<Response>;
 }
 
@@ -34,6 +34,7 @@ export class ArmadaAPIClientImpl implements ArmadaAPIClient {
     cacheBust?: boolean
   ): Promise<Response> {
     const url = new URL('/v1/content', `${this.protocol}//${host}`);
+
     url.searchParams.append('project_id', this.projectId);
     url.searchParams.append('resource', resource);
     if (cacheBust) {
