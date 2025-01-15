@@ -2,7 +2,14 @@
 <html lang="en">
 
 <head>
-  <link rel="stylesheet" href="/earthfast/styles/main.css">
+  <!-- add base href required for urls that have path after domain or subdomain like IPFS gateway urls -->
+  <script>
+    const currentUrl = new URL(window.location.href);
+    const baseHref = currentUrl.href.replace(/\/$/, '');
+    document.head.insertAdjacentHTML('beforeend', `<base href="${baseHref}">`);
+    console.log('adding base href', baseHref);
+  </script>
+  <link rel="stylesheet" href="earthfast/styles/main.css">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
 </head>
 
@@ -83,7 +90,7 @@
         }
       });
 
-      navigator.serviceWorker.register(serviceWorker, { scope: '/' })
+      navigator.serviceWorker.register(`${baseHref}${serviceWorker}`, { scope: baseHref })
         .then(reg => {
           console.log('Service Worker registration successful with scope: ', reg.scope);
 
