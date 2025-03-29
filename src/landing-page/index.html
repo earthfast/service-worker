@@ -50,7 +50,11 @@
       document.getElementById('domain').innerText = location.host;
 
       if (!('serviceWorker' in navigator)) {
-        fail('This browser does not support the EarthFast Service Worker, please use a different native browser instead.');
+        document.cookie = "supportsSW=false; path=/";
+        console.log("supportsSW=false");
+        // reload the page with the cookie set
+        // this will get sent to the server which loads the page through proxy
+        window.location.reload();
         return;
       }
 
