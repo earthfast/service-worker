@@ -1,7 +1,3 @@
-import {CID} from 'multiformats/cid';
-import * as rawCodec from 'multiformats/codecs/raw';
-import {sha256} from 'multiformats/hashes/sha2';
-
 import {Adapter} from '../adapter';
 import {NormalizedUrl} from '../api';
 import {AppVersion} from '../app-version';
@@ -14,6 +10,7 @@ import {sha1Binary} from '../sha1';
 
 import {ContentAPIClient} from './api';
 import {ArmadaLazyAssetGroup} from './assets';
+import {computeCIDv1} from './cid'
 import {NodeRegistry} from './registry';
 
 class Broadcaster {
@@ -73,28 +70,14 @@ export class ArmadaAppVersion extends AppVersion {
 
   /**
    * Validates content using the configured hash function
-   *
-   * @param content The content buffer to validate
-   * @param expectedHash The expected hash from the manifest
-   * @returns true if the content matches the expected hash
    */
   async validateContentHash(content: ArrayBuffer, expectedHash: string): Promise<boolean> {
     try {
       if (this.hashFunction === 'ipfs-cid-v1') {
-        // IPFS CID validation
-        try {
-          const hash = await sha256.digest(new Uint8Array(content));
-          const cid = CID.create(1, rawCodec.code, hash);
-          const actualCid = cid.toString();
-
-          return actualCid === expectedHash;
-        } catch (err) {
-          this.debugHandler.log(`CID validation error: ${err}`);
-          // Fall back to default validation if CID validation fails
-          return sha1Binary(content) === expectedHash;
-        }
+        const actualCid = await computeCIDv1(content, this.subtleCrypto);
+        return actualCid === expectedHash;
       } else {
-        // Default to original SHA validation
+        // Default to SHA validation
         return sha1Binary(content) === expectedHash;
       }
     } catch (error) {

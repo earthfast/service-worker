@@ -1,7 +1,3 @@
-import {CID} from 'multiformats/cid';
-import * as rawCodec from 'multiformats/codecs/raw';
-import {sha256} from 'multiformats/hashes/sha2';
-
 import {Adapter} from '../adapter';
 import {LazyAssetGroup} from '../assets';
 import {Database} from '../database';
@@ -12,6 +8,7 @@ import {MsgAny} from '../msg';
 import {sha1Binary} from '../sha1';
 
 import {ContentAPIClient} from './api';
+import {computeCIDv1} from './cid'
 import {SwContentNodesFetchFailureError, SwNoArmadaNodes} from './error';
 import {MsgContentChecksumMismatch, MsgContentNodeFetchFailure} from './msg';
 import {NodeRegistry} from './registry';
@@ -176,23 +173,19 @@ export class ArmadaLazyAssetGroup extends LazyAssetGroup {
     url = this.adapter.normalizeUrl(url);
     const canonicalHash = this.hashes.get(url);
 
-    // Armada:
-    // Don't serve resources that can't be integrity checked.
     if (!canonicalHash) {
       throw new SwCriticalError(`Missing hash (safeContentFetch): ${url}`);
     }
 
-    // Get content buffer once for all hash calculations
+    // Get content buffer
     const contentBuffer = await response.arrayBuffer();
 
     // Use the configured hash function
     if (this.hashFunction === 'ipfs-cid-v1') {
       try {
-        const hash = await sha256.digest(new Uint8Array(contentBuffer));
-        const cid = CID.create(1, rawCodec.code, hash);
-        const actualCid = cid.toString();
-
-        return actualCid === canonicalHash;
+        // Use the utility function for CID calculation
+        const cid = await computeCIDv1(contentBuffer, this.subtleCrypto);
+        return cid === canonicalHash;
       } catch (err) {
         // Log error and fall back to legacy validation
         console.warn(`CID validation failed: ${err}`);
