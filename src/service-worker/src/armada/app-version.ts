@@ -1,3 +1,7 @@
+import {CID} from 'multiformats/cid';
+import * as rawCodec from 'multiformats/codecs/raw';
+import {sha256} from 'multiformats/hashes/sha2';
+
 import {Adapter} from '../adapter';
 import {NormalizedUrl} from '../api';
 import {AppVersion} from '../app-version';
@@ -79,10 +83,6 @@ export class ArmadaAppVersion extends AppVersion {
       if (this.hashFunction === 'ipfs-cid-v1') {
         // IPFS CID validation
         try {
-          const {CID} = await import('multiformats/cid');
-          const {sha256} = await import('multiformats/hashes/sha2');
-          const rawCodec = await import('multiformats/codecs/raw');
-
           const hash = await sha256.digest(new Uint8Array(content));
           const cid = CID.create(1, rawCodec.code, hash);
           const actualCid = cid.toString();
