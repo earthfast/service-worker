@@ -29,7 +29,7 @@ export class ArmadaLazyAssetGroup extends LazyAssetGroup {
       adapter: Adapter, idle: IdleScheduler, config: AssetGroupConfig, hashes: Map<string, string>,
       db: Database, cacheNamePrefix: string, protected registry: NodeRegistry,
       protected apiClient: ContentAPIClient, protected broadcaster: MessageBroadcaster,
-      protected subtleCrypto: SubtleCrypto) {
+      protected subtleCrypto: SubtleCrypto, protected hashFunction: string = 'sha256') {
     // We pass an instance of ThrowingFetcher to the superclass in order to be certain that every
     // fetch goes through safeContentFetch (and therefore the checksum test). If some codepath
     // happens to find its way to this.safeFetch(), that's a bug and a security issue.
@@ -43,17 +43,17 @@ export class ArmadaLazyAssetGroup extends LazyAssetGroup {
    * 3. Requests continue until either:
    *    - A valid response is received (correct hash)
    *    - All nodes have been tried and failed
-   * 
+   *
    * Error handling:
    * - Failed requests (non-200, hash mismatch) increment completedRequests
    * - Aborted requests are ignored in the completion count
    * - All errors are broadcast for monitoring
-   * 
+   *
    * Abort behavior:
    * - When a valid response is received, all other pending requests are aborted
    * - When all nodes fail, all pending requests are aborted
    * - All controllers are cleaned up in the finally block
-   * 
+   *
    * @param url The URL of the content to fetch
    * @returns A Response object with the requested content
    * @throws SwContentNodesFetchFailureError if all nodes fail
@@ -65,7 +65,7 @@ export class ArmadaLazyAssetGroup extends LazyAssetGroup {
       throw new SwNoArmadaNodes(`No nodes available`);
     }
 
-    let successfulResponse: Response | null = null;
+    let successfulResponse: Response|null = null;
     let completedRequests = 0;
     const controllers: AbortController[] = [];
 
@@ -86,7 +86,7 @@ export class ArmadaLazyAssetGroup extends LazyAssetGroup {
 
       try {
         const response = await this.apiClient.getContent(url, node, undefined, false);
-        
+
         // Early return if this request was aborted (don't process response)
         if (controller.signal.aborted) {
           return;
@@ -94,7 +94,8 @@ export class ArmadaLazyAssetGroup extends LazyAssetGroup {
 
         // Track failed responses (non-200) and broadcast error
         if (!response.ok) {
-          const msg = `Error fetching content: node=${node} resource=${url} status=${response.status}`;
+          const msg =
+              `Error fetching content: node=${node} resource=${url} status=${response.status}`;
           await this.broadcaster.postMessage(MsgContentNodeFetchFailure(msg));
           completedRequests++;
           return;
@@ -124,7 +125,7 @@ export class ArmadaLazyAssetGroup extends LazyAssetGroup {
     // Main promise that coordinates the requests and their timing
     const resultPromise = new Promise<Response>((resolve, reject) => {
       let timeoutId: NodeJS.Timeout;
-      
+
       // Helper to check if we're done (success or all failed)
       const checkStatus = () => {
         if (successfulResponse) {
@@ -135,10 +136,8 @@ export class ArmadaLazyAssetGroup extends LazyAssetGroup {
           clearTimeout(timeoutId);
           abortOtherControllers();
           reject(new SwContentNodesFetchFailureError(
-            `Failed to fetch content: resource=${url} attempts=${nodes.length}`,
-            undefined,
-            'All nodes failed'
-          ));
+              `Failed to fetch content: resource=${url} attempts=${nodes.length}`, undefined,
+              'All nodes failed'));
         }
       };
 
@@ -179,14 +178,34 @@ export class ArmadaLazyAssetGroup extends LazyAssetGroup {
       throw new SwCriticalError(`Missing hash (safeContentFetch): ${url}`);
     }
 
-    // Compute a checksum of the fetched data. We currently support manifests containing either
-    // SHA256 or SHA1 checksums, although the latter is for legacy support reasons and is not
-    // recommended for use in production.
+    // Get content buffer once for all hash calculations
+    const contentBuffer = await response.arrayBuffer();
+
+    // Use the configured hash function
+    if (this.hashFunction === 'ipfs-cid-v1') {
+      try {
+        // IPFS CID validation
+        const {CID} = await import('multiformats/cid');
+        const {sha256} = await import('multiformats/hashes/sha2');
+        const rawCodec = await import('multiformats/codecs/raw');
+
+        const hash = await sha256.digest(new Uint8Array(contentBuffer));
+        const cid = CID.create(1, rawCodec.code, hash);
+        const actualCid = cid.toString();
+
+        return actualCid === canonicalHash;
+      } catch (err) {
+        // Log error and fall back to legacy validation
+        console.warn(`CID validation failed: ${err}`);
+      }
+    }
+
+    // Legacy validation based on hash length
     let fetchedHash: string;
     if (canonicalHash.length == 64) {
-      fetchedHash = await this.sha256Binary(await response.arrayBuffer());
+      fetchedHash = await this.sha256Binary(contentBuffer);
     } else {
-      fetchedHash = sha1Binary(await response.arrayBuffer());
+      fetchedHash = sha1Binary(contentBuffer);
     }
 
     return fetchedHash === canonicalHash;

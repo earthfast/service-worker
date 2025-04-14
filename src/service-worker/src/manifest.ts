@@ -20,6 +20,7 @@ export interface Manifest {
   navigationUrls: {positive: boolean, regex: string}[];
   navigationRequestStrategy: 'freshness'|'performance';
   hashTable: {[url: string]: string};
+  hashFunction?: string;
 }
 
 export interface AssetGroupConfig {

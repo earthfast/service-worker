@@ -6,6 +6,7 @@ import {DebugHandler} from '../debug';
 import {IdleScheduler} from '../idle';
 import {Manifest} from '../manifest';
 import {MsgAny} from '../msg';
+import {sha1Binary} from '../sha1';
 
 import {ContentAPIClient} from './api';
 import {ArmadaLazyAssetGroup} from './assets';
@@ -21,6 +22,8 @@ class Broadcaster {
 }
 
 export class ArmadaAppVersion extends AppVersion {
+  private hashFunction: string;
+
   constructor(
       scope: ServiceWorkerGlobalScope, adapter: Adapter, database: Database, idle: IdleScheduler,
       debugHandler: DebugHandler, override readonly manifest: Manifest,
@@ -38,6 +41,9 @@ export class ArmadaAppVersion extends AppVersion {
 
     super(scope, adapter, database, idle, debugHandler, assetFreeManifest, manifestHash);
 
+    // Initialize the hash function from manifest (default to sha256)
+    this.hashFunction = manifest.hashFunction || 'sha256';
+
     const assetCacheNamePrefix = `${manifestHash}:assets`;
     const broadcaster = new Broadcaster(scope);
     this.assetGroups = ((manifest.assetGroups || []).map(config => {
@@ -52,6 +58,49 @@ export class ArmadaAppVersion extends AppVersion {
 
     // DataGroups are not supported.
     this.dataGroups = [];
+  }
+
+  /**
+   * Get the hash function being used by this version
+   */
+  getHashFunction(): string {
+    return this.hashFunction;
+  }
+
+  /**
+   * Validates content using the configured hash function
+   *
+   * @param content The content buffer to validate
+   * @param expectedHash The expected hash from the manifest
+   * @returns true if the content matches the expected hash
+   */
+  async validateContentHash(content: ArrayBuffer, expectedHash: string): Promise<boolean> {
+    try {
+      if (this.hashFunction === 'ipfs-cid-v1') {
+        // IPFS CID validation
+        try {
+          const {CID} = await import('multiformats/cid');
+          const {sha256} = await import('multiformats/hashes/sha2');
+          const rawCodec = await import('multiformats/codecs/raw');
+
+          const hash = await sha256.digest(new Uint8Array(content));
+          const cid = CID.create(1, rawCodec.code, hash);
+          const actualCid = cid.toString();
+
+          return actualCid === expectedHash;
+        } catch (err) {
+          this.debugHandler.log(`CID validation error: ${err}`);
+          // Fall back to default validation if CID validation fails
+          return sha1Binary(content) === expectedHash;
+        }
+      } else {
+        // Default to original SHA validation
+        return sha1Binary(content) === expectedHash;
+      }
+    } catch (error) {
+      this.debugHandler.log(`Error validating content: ${error}`);
+      return false;
+    }
   }
 
   override handleFetch(req: Request, event: ExtendableEvent): Promise<Response|null> {
