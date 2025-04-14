@@ -1,3 +1,7 @@
+import {CID} from 'multiformats/cid';
+import * as rawCodec from 'multiformats/codecs/raw';
+import {sha256} from 'multiformats/hashes/sha2';
+
 import {Adapter} from '../adapter';
 import {LazyAssetGroup} from '../assets';
 import {Database} from '../database';
@@ -184,11 +188,6 @@ export class ArmadaLazyAssetGroup extends LazyAssetGroup {
     // Use the configured hash function
     if (this.hashFunction === 'ipfs-cid-v1') {
       try {
-        // IPFS CID validation
-        const {CID} = await import('multiformats/cid');
-        const {sha256} = await import('multiformats/hashes/sha2');
-        const rawCodec = await import('multiformats/codecs/raw');
-
         const hash = await sha256.digest(new Uint8Array(contentBuffer));
         const cid = CID.create(1, rawCodec.code, hash);
         const actualCid = cid.toString();
