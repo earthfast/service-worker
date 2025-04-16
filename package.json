@@ -34,7 +34,7 @@
   },
   "scripts": {
     "build": "npm run lint && rollup -c --failAfterWarnings",
-    "test": "ts-node-dev --project=tsconfig.test.json ./node_modules/jasmine/bin/jasmine --config=./jasmine.json",
+    "test": "ts-node-dev --require=./register.js --project=tsconfig.test.json ./node_modules/jasmine/bin/jasmine --config=./jasmine.json",
     "test:watch": "ts-node-dev --respawn ./node_modules/jasmine/bin/jasmine --config=./jasmine.json",
     "test:e2e": "npm run build && npm run cypress:run",
     "lint": "eslint src/service-worker --ext .ts",

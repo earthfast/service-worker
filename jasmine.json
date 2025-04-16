@@ -3,7 +3,7 @@
   "spec_files": [
     "src/service-worker/test/**/*_spec.ts"
   ],
-  "helpers": ["ts-resolver.js"],
+  "helpers": [],
   "env": {
     "stopSpecOnExpectationFailure": false,
     "random": false
