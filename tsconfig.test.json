@@ -1,25 +1,21 @@
 {
     "extends": "./tsconfig.json",
     "ts-node": {
-        "transpileOnly": true,
-        "compilerOptions": {
-            "module": "commonjs"
-        }
+      "transpileOnly": true,
+      "compilerOptions": {
+        "module": "commonjs"
+      }
     },
     "compilerOptions": {
-        "moduleResolution": "NodeNext",
-        "allowJs": true,
-        "paths": {
-            "*": [
-                "*",
-                "*.js",
-                "*.ts"
-            ]
-        }
+      "moduleResolution": "node",
+      "allowJs": true,
+      "esModuleInterop": true,
+      "resolveJsonModule": true
     },
     "include": [
-        "src/**/*",
-        "vendor/**/*"
+      "src/**/*",
+      "vendor/**/*"
     ],
     "exclude": []
-}
+  }
+  
