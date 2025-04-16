@@ -15,6 +15,7 @@ export default {
         nodePolyfills(),
         typescript({
           include: ['src/service-worker/**/*.ts', 'vendor/**/*.ts'],
+          exclude: ['**/*.spec.ts', '**/*_spec.ts', '**/test/**/*.ts']
         }),
         replace({
           values: {
