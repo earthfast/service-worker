@@ -8,7 +8,7 @@ export default {
   plugins:
       [
         typescript({
-          include: 'src/service-worker/**/*.ts',
+          include: ['src/service-worker/**/*.ts', 'vendor/**/*.ts'],
         }),
         replace({
           values: {
