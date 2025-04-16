@@ -1,12 +1,13 @@
 {
   "name": "earthfast-sw",
   "dependencies": {
+    "multiformats": "^13.3.2",
     "rxjs": "^7.5.1"
   },
   "devDependencies": {
     "@rollup/plugin-commonjs": "^22.0.0",
     "@rollup/plugin-replace": "^3.0.1",
-    "@rollup/plugin-typescript": "^8.3.0",
+    "@rollup/plugin-typescript": "^8.5.0",
     "@tsconfig/node16": "^1.0.2",
     "@types/angular": "^1.8.4",
     "@types/jasmine": "^4.0.3",
