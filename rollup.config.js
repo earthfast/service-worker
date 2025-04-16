@@ -1,12 +1,18 @@
+import commonjs from '@rollup/plugin-commonjs';
+import {nodeResolve} from '@rollup/plugin-node-resolve';
 import replace from '@rollup/plugin-replace';
 import typescript from '@rollup/plugin-typescript';
 import copy from 'rollup-plugin-copy';
+import nodePolyfills from 'rollup-plugin-node-polyfills';
 
 export default {
   input: 'src/service-worker/main.ts',
   output: {file: 'dist/templates/main.js.tmpl', format: 'iife'},
   plugins:
       [
+        nodeResolve({browser: true, preferBuiltins: false}),
+        commonjs(),
+        nodePolyfills(),
         typescript({
           include: ['src/service-worker/**/*.ts', 'vendor/**/*.ts'],
         }),
