@@ -1,24 +1,20 @@
+import {createRequire} from 'module';
+const require = createRequire(import.meta.url);
+
+const MF = require('multiformats/dist/cjs');
+const {CID} = MF;
+const {sha256} = MF.hashes;
+
 /**
  * Compute an IPFS CID v1 for the given data.
- * This function dynamically imports the required multiformats modules so that
- * Node's ESM resolution (using the "exports" field) works properly.
+ * Uses SHA-256 (sha2) as the digest algorithm.
  *
- * Uses SHA2-256 as the digest algorithm.
- *
- * @param buffer The data as an ArrayBuffer.
- * @returns A Promise that resolves to the computed CID string.
+ * @param buffer The asset's ArrayBuffer.
+ * @returns A Promise resolving to the computed CID (as a string).
  */
-export async function computeCidV1(buffer: ArrayBuffer): Promise<string> {
-  // Dynamically import multiformats and the SHA2 module.
-  const {CID} = await import('multiformats');
-  const {sha256} = await import('multiformats/hashes/sha2');
-
-  // Compute the digest for the data.
-  const digest = await sha256.digest(new Uint8Array(buffer));
-
-  // Create a CID v1 using the digest.
-  const cid = CID.create(1, sha256.code, digest);
-
-  // Return the CID as a string (default base32 encoding).
-  return cid.toString();
+export function computeCidV1(buffer: ArrayBuffer): Promise<string> {
+  return sha256.digest(new Uint8Array(buffer)).then((digest: any) => {
+    const cid = CID.create(1, sha256.code, digest);
+    return cid.toString();  // Returns base32 CID v1 string by default.
+  });
 }
