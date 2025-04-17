@@ -1,3 +1,5 @@
+import commonjs from '@rollup/plugin-commonjs';
+import resolve from '@rollup/plugin-node-resolve';
 import replace from '@rollup/plugin-replace';
 import typescript from '@rollup/plugin-typescript';
 import copy from 'rollup-plugin-copy';
@@ -7,6 +9,12 @@ export default {
   output: {file: 'dist/templates/main.js.tmpl', format: 'iife'},
   plugins:
       [
+        // Resolve modules from node_modules so that multiformats will be bundled.
+        resolve({
+          browser: true,
+        }),
+        // Convert CommonJS modules (like multiformats) to ES modules.
+        commonjs(),
         typescript({
           include: 'src/service-worker/**/*.ts',
         }),
