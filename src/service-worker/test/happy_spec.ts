@@ -6,6 +6,7 @@
  * found in the LICENSE file at https://angular.io/license
  */
 
+import {computeCidV1} from '../src/armada/cid';
 import {CacheDatabase} from '../src/db-cache';
 import {Driver, DriverReadyState} from '../src/driver';
 import {AssetGroupConfig, DataGroupConfig, Manifest} from '../src/manifest';
@@ -13,9 +14,53 @@ import {sha1} from '../src/sha1';
 import {clearAllCaches, MockCache} from '../testing/cache';
 import {MockWindowClient} from '../testing/clients';
 import {MockRequest, MockResponse} from '../testing/fetch';
-import {MockFileSystem, MockFileSystemBuilder, MockServerState, MockServerStateBuilder, tmpHashTableForFs} from '../testing/mock';
+import {MockFileSystem, MockFileSystemBuilder, MockServerState, MockServerStateBuilder} from '../testing/mock';
 import {SwTestHarness, SwTestHarnessBuilder} from '../testing/scope';
 import {envIsSupported, processNavigationUrls, TEST_BOOTSTRAP_NODE} from '../testing/utils';
+
+// Helper function to create CID-based hash tables
+async function cidHashTableForFs(
+    fs: MockFileSystem, breakHashes: {[url: string]: boolean} = {},
+    baseHref = '/'): Promise<{[url: string]: string}> {
+  const table: {[url: string]: string} = {};
+
+  await Promise.all(fs.list().map(async (filePath) => {
+    const urlPath = `${baseHref.replace(/\/$/, '')}/${filePath.replace(/^\//, '')}`;
+    const file = fs.lookup(filePath);
+    if (!file) return;
+
+    if (file.brokenHash) {
+      // For broken hashes, use a random value
+      const randomContent = ((Math.random() * 10000000) | 0).toString();
+      const encoder = new TextEncoder();
+      const randomBuffer = encoder.encode(randomContent).buffer;
+      table[urlPath] = await computeCidV1(randomBuffer);
+    } else if (file.hashThisFile) {
+      const encoder = new TextEncoder();
+      const buffer = encoder.encode(file.contents).buffer;
+      const cid = await computeCidV1(buffer);
+
+      if (breakHashes[filePath]) {
+        // For broken hashes, use a different CID entirely
+        const wrongContent = file.contents + 'BROKEN';
+        const wrongBuffer = encoder.encode(wrongContent).buffer;
+        table[urlPath] = await computeCidV1(wrongBuffer);
+      } else {
+        table[urlPath] = cid;
+      }
+    }
+  }));
+
+  return table;
+}
+
+// Helper to create a manifest with CID hashes
+async function createManifestWithCidHashes(
+    baseManifest: Manifest, fs: MockFileSystem, breakHashes: {[url: string]: boolean} = {},
+    baseHref = '/'): Promise<Manifest> {
+  const hashTable = await cidHashTableForFs(fs, breakHashes, baseHref);
+  return {...baseManifest, hashTable};
+}
 
 (function() {
 // Skip environments that don't support the minimum APIs needed to run the SW tests.
@@ -59,7 +104,8 @@ const brokenFs = new MockFileSystemBuilder()
                      .addFile('/bar.txt', 'this is bar (broken)')
                      .build();
 
-const brokenManifest: Manifest = {
+// Base manifest structure
+const baseManifest: Manifest = {
   configVersion: 1,
   timestamp: 1234567890123,
   index: '/foo.txt',
@@ -76,10 +122,10 @@ const brokenManifest: Manifest = {
   dataGroups: [],
   navigationUrls: processNavigationUrls(''),
   navigationRequestStrategy: 'performance',
-  hashTable: tmpHashTableForFs(brokenFs, {'/foo.txt': true}),
+  hashTable: {},  // Will be filled in async beforeAll
 };
 
-const brokenLazyManifest: Manifest = {
+const baseBrokenLazyManifest: Manifest = {
   configVersion: 1,
   timestamp: 1234567890123,
   index: '/foo.txt',
@@ -108,7 +154,7 @@ const brokenLazyManifest: Manifest = {
   dataGroups: [],
   navigationUrls: processNavigationUrls(''),
   navigationRequestStrategy: 'performance',
-  hashTable: tmpHashTableForFs(brokenFs, {'/bar.txt': true}),
+  hashTable: {},  // Will be filled in async beforeAll
 };
 
 // Manifest without navigation urls to test backward compatibility with
@@ -122,14 +168,8 @@ interface ManifestV5 {
   hashTable: {[url: string]: string};
 }
 
-// To simulate versions < 6.0.0
-const manifestOld: ManifestV5 = {
-  configVersion: 1,
-  index: '/foo.txt',
-  hashTable: tmpHashTableForFs(dist),
-};
-
-const manifest: Manifest = {
+// Base manifests for the tests
+const baseFullManifest: Manifest = {
   configVersion: 1,
   timestamp: 1234567890123,
   appData: {
@@ -202,56 +242,14 @@ const manifest: Manifest = {
   ],
   navigationUrls: processNavigationUrls(''),
   navigationRequestStrategy: 'performance',
-  hashTable: tmpHashTableForFs(dist),
+  hashTable: {},  // Will be filled in async beforeAll
 };
 
-const manifestUpdate: Manifest = {
-  configVersion: 1,
-  timestamp: 1234567890123,
+const baseUpdateManifest: Manifest = {
+  ...baseFullManifest,
   appData: {
     version: 'update',
   },
-  index: '/foo.txt',
-  assetGroups: [
-    {
-      name: 'assets',
-      installMode: 'prefetch',
-      updateMode: 'prefetch',
-      urls: [
-        '/foo.txt',
-        '/bar.txt',
-        '/redirected.txt',
-      ],
-      patterns: [
-        '/unhashed/.*',
-      ],
-      cacheQueryOptions: {ignoreVary: true},
-    },
-    {
-      name: 'other',
-      installMode: 'lazy',
-      updateMode: 'lazy',
-      urls: [
-        '/baz.txt',
-        '/qux.txt',
-      ],
-      patterns: [],
-      cacheQueryOptions: {ignoreVary: true},
-    },
-    {
-      name: 'lazy_prefetch',
-      installMode: 'lazy',
-      updateMode: 'prefetch',
-      urls: [
-        '/quux.txt',
-        '/quuux.txt',
-        '/lazy/unchanged1.txt',
-        '/lazy/unchanged2.txt',
-      ],
-      patterns: [],
-      cacheQueryOptions: {ignoreVary: true},
-    }
-  ],
   navigationUrls: processNavigationUrls(
       '',
       [
@@ -260,43 +258,69 @@ const manifestUpdate: Manifest = {
         '!/ignored/file1',
         '!/ignored/dir/**',
       ]),
-  navigationRequestStrategy: 'performance',
-  hashTable: tmpHashTableForFs(distUpdate),
 };
 
-const serverBuilderBase =
-    new MockServerStateBuilder()
-        .withStaticFiles(dist)
-        .withRedirect('/redirected.txt', '/redirect-target.txt', 'this was a redirect')
-        .withError('/error.txt');
+// To simulate versions < 6.0.0
+let manifestOld: ManifestV5;
+let brokenManifest: Manifest;
+let brokenLazyManifest: Manifest;
+let manifest: Manifest;
+let manifestUpdate: Manifest;
 
-const server = serverBuilderBase.withManifest(manifest).build();
+let server: MockServerState;
+let serverRollback: MockServerState;
+let serverUpdate: MockServerState;
+let brokenServer: MockServerState;
+let brokenLazyServer: MockServerState;
+let server404: MockServerState;
 
-const serverRollback =
-    serverBuilderBase.withManifest({...manifest, timestamp: manifest.timestamp + 1}).build();
-
-const serverUpdate =
-    new MockServerStateBuilder()
-        .withStaticFiles(distUpdate)
-        .withManifest(manifestUpdate)
-        .withRedirect('/redirected.txt', '/redirect-target.txt', 'this was a redirect')
-        .build();
-
-const brokenServer =
-    new MockServerStateBuilder().withStaticFiles(brokenFs).withManifest(brokenManifest).build();
-
-const brokenLazyServer =
-    new MockServerStateBuilder().withStaticFiles(brokenFs).withManifest(brokenLazyManifest).build();
-
-const server404 = new MockServerStateBuilder().withStaticFiles(dist).build();
-
-const manifestHash = sha1(JSON.stringify(manifest));
-const manifestUpdateHash = sha1(JSON.stringify(manifestUpdate));
-
+let manifestHash: string;
+let manifestUpdateHash: string;
 
 describe('Driver', () => {
   let scope: SwTestHarness;
   let driver: Driver;
+
+  // Setup the manifests and servers before all tests
+  beforeAll(async () => {
+    // Create manifests with CID hash tables
+    brokenManifest = await createManifestWithCidHashes(baseManifest, brokenFs, {'/foo.txt': true});
+    brokenLazyManifest =
+        await createManifestWithCidHashes(baseBrokenLazyManifest, brokenFs, {'/bar.txt': true});
+    manifest = await createManifestWithCidHashes(baseFullManifest, dist);
+    manifestUpdate = await createManifestWithCidHashes(baseUpdateManifest, distUpdate);
+
+    // Old manifest for backward compatibility testing
+    const oldHashTable = await cidHashTableForFs(dist);
+    manifestOld = {configVersion: 1, index: '/foo.txt', hashTable: oldHashTable};
+
+    // Create server states
+    const serverBuilderBase =
+        new MockServerStateBuilder()
+            .withStaticFiles(dist)
+            .withRedirect('/redirected.txt', '/redirect-target.txt', 'this was a redirect')
+            .withError('/error.txt');
+
+    server = serverBuilderBase.withManifest(manifest).build();
+    serverRollback =
+        serverBuilderBase.withManifest({...manifest, timestamp: manifest.timestamp + 1}).build();
+    serverUpdate =
+        new MockServerStateBuilder()
+            .withStaticFiles(distUpdate)
+            .withManifest(manifestUpdate)
+            .withRedirect('/redirected.txt', '/redirect-target.txt', 'this was a redirect')
+            .build();
+    brokenServer =
+        new MockServerStateBuilder().withStaticFiles(brokenFs).withManifest(brokenManifest).build();
+    brokenLazyServer = new MockServerStateBuilder()
+                           .withStaticFiles(brokenFs)
+                           .withManifest(brokenLazyManifest)
+                           .build();
+    server404 = new MockServerStateBuilder().withStaticFiles(dist).build();
+
+    manifestHash = sha1(JSON.stringify(manifest));
+    manifestUpdateHash = sha1(JSON.stringify(manifestUpdate));
+  });
 
   beforeEach(() => {
     server.reset();
