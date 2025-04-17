@@ -6,6 +6,7 @@
  * found in the LICENSE file at https://angular.io/license
  */
 
+import {computeCidV1} from '../../src/armada/cid';
 import {ArmadaDriver} from '../../src/armada/driver';
 import {Manifest} from '../../src/manifest';
 import {sha1} from '../../src/sha1';
@@ -26,8 +27,23 @@ export class MockFile {
     return sha1(this.contents);
   }
 
+  // Add method to compute CID for file content
+  async getCid(): Promise<string> {
+    const encoder = new TextEncoder();
+    const buffer = encoder.encode(this.contents).buffer;
+    return computeCidV1(buffer);
+  }
+
   get randomHash(): string {
     return sha1(((Math.random() * 10000000) | 0).toString());
+  }
+
+  // Generate a broken CID for testing
+  async getRandomCid(): Promise<string> {
+    const randomContent = ((Math.random() * 10000000) | 0).toString();
+    const encoder = new TextEncoder();
+    const buffer = encoder.encode(randomContent).buffer;
+    return computeCidV1(buffer);
   }
 }
 
@@ -85,6 +101,15 @@ export class MockFileSystem {
 
   list(): string[] {
     return Array.from(this.resources.keys());
+  }
+
+  // Helper to read content directly
+  async read(path: string): Promise<string> {
+    const file = this.lookup(path);
+    if (!file) {
+      throw new Error(`File not found: ${path}`);
+    }
+    return file.contents;
   }
 }
 
@@ -355,6 +380,7 @@ export function tmpManifestSingleAssetGroup(fs: MockFileSystem): Manifest {
   };
 }
 
+// Traditional SHA1 hash table generation (keep for backward compatibility)
 export function tmpHashTableForFs(
     fs: MockFileSystem, breakHashes: {[url: string]: boolean} = {},
     baseHref = '/'): {[url: string]: string} {
@@ -371,6 +397,31 @@ export function tmpHashTableForFs(
       }
     }
   });
+  return table;
+}
+
+// New async CID-based hash table generation
+export async function cidHashTableForFs(
+    fs: MockFileSystem, breakHashes: {[url: string]: boolean} = {},
+    baseHref = '/'): Promise<{[url: string]: string}> {
+  const table: {[url: string]: string} = {};
+
+  // Process each file in the filesystem
+  await Promise.all(fs.list().map(async (filePath) => {
+    const urlPath = joinPaths(baseHref, filePath);
+    const file = fs.lookup(filePath)!;
+
+    if (file.brokenHash) {
+      table[urlPath] = await file.getRandomCid();
+    } else if (file.hashThisFile) {
+      const cid = await file.getCid();
+      table[urlPath] = breakHashes[filePath] ?
+          // For broken hashes, use a different CID entirely rather than trying to reverse
+          await file.getRandomCid() :
+          cid;
+    }
+  }));
+
   return table;
 }
 

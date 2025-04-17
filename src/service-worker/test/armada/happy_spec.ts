@@ -13,19 +13,46 @@ import 'isomorphic-fetch';
 
 import {webcrypto} from 'crypto';
 
-import {ArmadaAPIClient, ArmadaAPIClientImpl} from '../../src/armada/api';
+import {ArmadaAPIClientImpl} from '../../src/armada/api';
+import {computeCidV1} from '../../src/armada/cid';
 import {ArmadaDriver, ArmadaDriver as Driver} from '../../src/armada/driver';
 import {DynamicNodeRegistry} from '../../src/armada/registry';
 import {CacheDatabase} from '../../src/db-cache';
 import {DriverReadyState} from '../../src/driver';
 import {AssetGroupConfig, DataGroupConfig, Manifest} from '../../src/manifest';
 import {sha1} from '../../src/sha1';
-import {MockFileSystem, MockFileSystemBuilder, MockServerStateBuilder, tmpHashTableForFs} from '../../testing/armada/mock';
+import {MockFileSystem, MockFileSystemBuilder, MockServerStateBuilder} from '../../testing/armada/mock';
 import {SwTestHarness, SwTestHarnessBuilder} from '../../testing/armada/scope';
 import {MockCache} from '../../testing/cache';
 import {MockWindowClient} from '../../testing/clients';
 import {MockRequest, MockResponse} from '../../testing/fetch';
 import {envIsSupported, processNavigationUrls, TEST_BOOTSTRAP_NODE, TEST_BOOTSTRAP_NODES, TEST_CONTENT_NODES, TEST_CONTENT_NODES_PORTS, TEST_PROJECT_ID} from '../../testing/utils';
+
+// Helper function to create CID-based hash tables
+async function cidHashTableForFs(
+    fs: MockFileSystem, fileFilter = {}, baseHref = ''): Promise<{[url: string]: string}> {
+  const table: {[url: string]: string} = {};
+
+  await Promise.all(fs.list().map(async (filePath) => {
+    const file = fs.lookup(filePath);
+    if (!file || !file.hashThisFile) return;
+
+    const urlPath = baseHref + filePath;
+    const encoder = new TextEncoder();
+    const buffer = encoder.encode(file.contents).buffer;
+
+    if (file.brokenHash) {
+      // For broken hashes, use a random value
+      const randomContent = ((Math.random() * 10000000) | 0).toString();
+      const randomBuffer = encoder.encode(randomContent).buffer;
+      table[urlPath] = await computeCidV1(randomBuffer);
+    } else {
+      table[urlPath] = await computeCidV1(buffer);
+    }
+  }));
+
+  return table;
+}
 
 (function() {
 // Skip environments that don't support the minimum APIs needed to run the SW tests.
@@ -70,32 +97,16 @@ const brokenFs = new MockFileSystemBuilder()
                      .addFile('/bar.txt', 'this is bar (broken)')
                      .build();
 
-const brokenManifest: Manifest = {
-  configVersion: 1,
-  timestamp: 1234567890123,
-  index: '/foo.txt',
-  assetGroups: [{
-    name: 'assets',
-    installMode: 'prefetch',
-    updateMode: 'prefetch',
-    urls: [
-      '/foo.txt',
-    ],
-    patterns: [],
-    cacheQueryOptions: {ignoreVary: true},
-  }],
-  dataGroups: [],
-  navigationUrls: processNavigationUrls(''),
-  navigationRequestStrategy: 'performance',
-  hashTable: tmpHashTableForFs(brokenFs, {'/foo.txt': true}),
-};
+// Setup function to create manifests with CID hash tables
+async function createManifest(
+    fs: MockFileSystem, baseConfig: Partial<Manifest> = {}): Promise<Manifest> {
+  const hashTable = await cidHashTableForFs(fs);
 
-const brokenLazyManifest: Manifest = {
-  configVersion: 1,
-  timestamp: 1234567890123,
-  index: '/foo.txt',
-  assetGroups: [
-    {
+  return {
+    configVersion: 1,
+    timestamp: 1234567890123,
+    index: '/foo.txt',
+    assetGroups: [{
       name: 'assets',
       installMode: 'prefetch',
       updateMode: 'prefetch',
@@ -104,190 +115,200 @@ const brokenLazyManifest: Manifest = {
       ],
       patterns: [],
       cacheQueryOptions: {ignoreVary: true},
-    },
-    {
-      name: 'lazy-assets',
-      installMode: 'lazy',
-      updateMode: 'lazy',
-      urls: [
-        '/bar.txt',
-      ],
-      patterns: [],
-      cacheQueryOptions: {ignoreVary: true},
-    },
-  ],
-  dataGroups: [],
-  navigationUrls: processNavigationUrls(''),
-  navigationRequestStrategy: 'performance',
-  hashTable: tmpHashTableForFs(brokenFs, {'/bar.txt': true}),
-};
-
-// Manifest without navigation urls to test backward compatibility with
-// versions < 6.0.0.
-interface ManifestV5 {
-  configVersion: number;
-  appData?: {[key: string]: string};
-  index: string;
-  assetGroups?: AssetGroupConfig[];
-  dataGroups?: DataGroupConfig[];
-  hashTable: {[url: string]: string};
+    }],
+    dataGroups: [],
+    navigationUrls: processNavigationUrls(''),
+    navigationRequestStrategy: 'performance',
+    hashTable,
+    ...baseConfig
+  };
 }
 
-// To simulate versions < 6.0.0
-const manifestOld: ManifestV5 = {
-  configVersion: 1,
-  index: '/foo.txt',
-  hashTable: tmpHashTableForFs(dist),
-};
+let brokenManifest: Manifest;
+let brokenLazyManifest: Manifest;
+let manifest: Manifest;
+let manifestUpdate: Manifest;
+let altPortManifest: Manifest;
 
-const manifest: Manifest = {
-  configVersion: 1,
-  timestamp: 1234567890123,
-  appData: {
-    version: 'original',
-  },
-  index: '/foo.txt',
-  assetGroups: [
-    {
-      name: 'assets',
-      installMode: 'prefetch',
-      updateMode: 'prefetch',
-      urls: [
-        '/foo.txt',
-        '/bar.txt',
-        '/redirected.txt',
-        '/foos.txt',
-      ],
-      patterns: [],
-      cacheQueryOptions: {ignoreVary: true},
-    },
-    {
-      name: 'other',
-      installMode: 'lazy',
-      updateMode: 'lazy',
-      urls: [
-        '/baz.txt',
-        '/qux.txt',
-      ],
-      patterns: [],
-      cacheQueryOptions: {ignoreVary: true},
-    },
-    {
-      name: 'lazy_prefetch',
-      installMode: 'lazy',
-      updateMode: 'prefetch',
-      urls: [
-        '/quux.txt',
-        '/quuux.txt',
-        '/lazy/unchanged1.txt',
-        '/lazy/unchanged2.txt',
-      ],
-      patterns: [],
-      cacheQueryOptions: {ignoreVary: true},
-    }
-  ],
-  dataGroups: [],
-  navigationUrls: processNavigationUrls(''),
-  navigationRequestStrategy: 'performance',
-  hashTable: {...tmpHashTableForFs(dist)},
-};
+let server: MockServerState;
+let serverRollback: MockServerState;
+let serverUpdate: MockServerState;
+let brokenServer: MockServerState;
+let brokenLazyServer: MockServerState;
+let server404: MockServerState;
 
-const manifestUpdate: Manifest = {
-  configVersion: 1,
-  timestamp: 1234567890123,
-  appData: {
-    version: 'update',
-  },
-  index: '/foo.txt',
-  assetGroups: [
-    {
-      name: 'assets',
-      installMode: 'prefetch',
-      updateMode: 'prefetch',
-      urls: [
-        '/foo.txt',
-        '/bar.txt',
-        '/redirected.txt',
-      ],
-      patterns: [],
-      cacheQueryOptions: {ignoreVary: true},
-    },
-    {
-      name: 'other',
-      installMode: 'lazy',
-      updateMode: 'lazy',
-      urls: [
-        '/baz.txt',
-        '/qux.txt',
-      ],
-      patterns: [],
-      cacheQueryOptions: {ignoreVary: true},
-    },
-    {
-      name: 'lazy_prefetch',
-      installMode: 'lazy',
-      updateMode: 'prefetch',
-      urls: [
-        '/quux.txt',
-        '/quuux.txt',
-        '/lazy/unchanged1.txt',
-        '/lazy/unchanged2.txt',
-      ],
-      patterns: [],
-      cacheQueryOptions: {ignoreVary: true},
-    }
-  ],
-  navigationUrls: processNavigationUrls(
-      '',
-      [
-        '/**/file1',
-        '/**/file2',
-        '!/ignored/file1',
-        '!/ignored/dir/**',
-      ]),
-  navigationRequestStrategy: 'performance',
-  hashTable: tmpHashTableForFs(distUpdate),
-};
-
-const altPortManifest = {
-  ...manifest,
-  hashTable: {...tmpHashTableForFs(distAltPort)}
-};
-altPortManifest.assetGroups?.map(assetGroup => assetGroup.urls.push('/foos.txt'));
-
-const serverBuilderBase =
-    new MockServerStateBuilder()
-        .withStaticFiles(dist)
-        .withRedirect('/redirected.txt', '/redirect-target.txt', 'this was a redirect')
-        .withError('/error.txt');
-
-const serverRollback =
-    serverBuilderBase.withManifest({...manifest, timestamp: manifest.timestamp + 1}).build();
-
-const serverUpdate =
-    new MockServerStateBuilder()
-        .withStaticFiles(distUpdate)
-        .withManifest(manifestUpdate)
-        .withRedirect('/redirected.txt', '/redirect-target.txt', 'this was a redirect')
-        .build();
-
-const brokenServer =
-    new MockServerStateBuilder().withStaticFiles(brokenFs).withManifest(brokenManifest).build();
-
-const brokenLazyServer =
-    new MockServerStateBuilder().withStaticFiles(brokenFs).withManifest(brokenLazyManifest).build();
-
-const server = serverBuilderBase.withManifest(manifest).build();
-
-
-const server404 = new MockServerStateBuilder().withStaticFiles(dist).build();
-
-const manifestHash = sha1(JSON.stringify(manifest));
-const manifestUpdateHash = sha1(JSON.stringify(manifestUpdate));
+let manifestHash: string;
+let manifestUpdateHash: string;
 
 describe('Driver', () => {
   let scope: SwTestHarness;
   let driver: Driver;
+
+  // Setup manifests and servers before tests
+  beforeAll(async () => {
+    // Create all the manifests with CID hash tables
+    brokenManifest = await createManifest(brokenFs, {
+      assetGroups: [{
+        name: 'assets',
+        installMode: 'prefetch',
+        updateMode: 'prefetch',
+        urls: ['/foo.txt'],
+        patterns: [],
+        cacheQueryOptions: {ignoreVary: true},
+      }]
+    });
+
+    brokenLazyManifest = await createManifest(brokenFs, {
+      assetGroups: [
+        {
+          name: 'assets',
+          installMode: 'prefetch',
+          updateMode: 'prefetch',
+          urls: ['/foo.txt'],
+          patterns: [],
+          cacheQueryOptions: {ignoreVary: true},
+        },
+        {
+          name: 'lazy-assets',
+          installMode: 'lazy',
+          updateMode: 'lazy',
+          urls: ['/bar.txt'],
+          patterns: [],
+          cacheQueryOptions: {ignoreVary: true},
+        },
+      ]
+    });
+
+    manifest = await createManifest(dist, {
+      appData: {
+        version: 'original',
+      },
+      assetGroups: [
+        {
+          name: 'assets',
+          installMode: 'prefetch',
+          updateMode: 'prefetch',
+          urls: [
+            '/foo.txt',
+            '/bar.txt',
+            '/redirected.txt',
+            '/foos.txt',
+          ],
+          patterns: [],
+          cacheQueryOptions: {ignoreVary: true},
+        },
+        {
+          name: 'other',
+          installMode: 'lazy',
+          updateMode: 'lazy',
+          urls: [
+            '/baz.txt',
+            '/qux.txt',
+          ],
+          patterns: [],
+          cacheQueryOptions: {ignoreVary: true},
+        },
+        {
+          name: 'lazy_prefetch',
+          installMode: 'lazy',
+          updateMode: 'prefetch',
+          urls: [
+            '/quux.txt',
+            '/quuux.txt',
+            '/lazy/unchanged1.txt',
+            '/lazy/unchanged2.txt',
+          ],
+          patterns: [],
+          cacheQueryOptions: {ignoreVary: true},
+        }
+      ]
+    });
+
+    manifestUpdate = await createManifest(distUpdate, {
+      appData: {
+        version: 'update',
+      },
+      assetGroups: [
+        {
+          name: 'assets',
+          installMode: 'prefetch',
+          updateMode: 'prefetch',
+          urls: [
+            '/foo.txt',
+            '/bar.txt',
+            '/redirected.txt',
+          ],
+          patterns: [],
+          cacheQueryOptions: {ignoreVary: true},
+        },
+        {
+          name: 'other',
+          installMode: 'lazy',
+          updateMode: 'lazy',
+          urls: [
+            '/baz.txt',
+            '/qux.txt',
+          ],
+          patterns: [],
+          cacheQueryOptions: {ignoreVary: true},
+        },
+        {
+          name: 'lazy_prefetch',
+          installMode: 'lazy',
+          updateMode: 'prefetch',
+          urls: [
+            '/quux.txt',
+            '/quuux.txt',
+            '/lazy/unchanged1.txt',
+            '/lazy/unchanged2.txt',
+          ],
+          patterns: [],
+          cacheQueryOptions: {ignoreVary: true},
+        }
+      ],
+      navigationUrls: processNavigationUrls(
+          '',
+          [
+            '/**/file1',
+            '/**/file2',
+            '!/ignored/file1',
+            '!/ignored/dir/**',
+          ])
+    });
+
+    altPortManifest = {...manifest};
+    altPortManifest.hashTable = await cidHashTableForFs(distAltPort);
+    if (altPortManifest.assetGroups) {
+      altPortManifest.assetGroups.forEach(assetGroup => assetGroup.urls.push('/foos.txt'));
+    }
+
+    // Create server states
+    const serverBuilderBase =
+        new MockServerStateBuilder()
+            .withStaticFiles(dist)
+            .withRedirect('/redirected.txt', '/redirect-target.txt', 'this was a redirect')
+            .withError('/error.txt');
+
+    server = serverBuilderBase.withManifest(manifest).build();
+    serverRollback =
+        serverBuilderBase.withManifest({...manifest, timestamp: manifest.timestamp + 1}).build();
+    serverUpdate =
+        new MockServerStateBuilder()
+            .withStaticFiles(distUpdate)
+            .withManifest(manifestUpdate)
+            .withRedirect('/redirected.txt', '/redirect-target.txt', 'this was a redirect')
+            .build();
+    brokenServer =
+        new MockServerStateBuilder().withStaticFiles(brokenFs).withManifest(brokenManifest).build();
+    brokenLazyServer = new MockServerStateBuilder()
+                           .withStaticFiles(brokenFs)
+                           .withManifest(brokenLazyManifest)
+                           .build();
+    server404 = new MockServerStateBuilder().withStaticFiles(dist).build();
+
+    manifestHash = sha1(JSON.stringify(manifest));
+    manifestUpdateHash = sha1(JSON.stringify(manifestUpdate));
+  });
 
   beforeEach(() => {
     server.reset();
@@ -302,6 +323,7 @@ describe('Driver', () => {
         new Driver(scope, scope, new CacheDatabase(scope), registry, apiClient, webcrypto.subtle);
   });
 
+  // Test cases continue as before...
   it('activates without waiting', async () => {
     const skippedWaiting = await scope.startup(true);
     expect(skippedWaiting).toBe(true);
