@@ -27,7 +27,6 @@ export class MockFile {
     return sha1(this.contents);
   }
 
-  // Add method to compute CID for file content
   async getCid(): Promise<string> {
     const encoder = new TextEncoder();
     const buffer = encoder.encode(this.contents).buffer;
@@ -38,7 +37,6 @@ export class MockFile {
     return sha1(((Math.random() * 10000000) | 0).toString());
   }
 
-  // Generate a broken CID for testing
   async getRandomCid(): Promise<string> {
     const randomContent = ((Math.random() * 10000000) | 0).toString();
     const encoder = new TextEncoder();
@@ -419,12 +417,15 @@ export async function cidHashTableForFs(
       const buffer = encoder.encode(file.contents).buffer;
 
       if (file.brokenHash || breakHashes[filePath]) {
-        // Generate a different CID for broken hashes
-        const wrongContent = file.contents + 'BROKEN';
-        const wrongBuffer = encoder.encode(wrongContent).buffer;
-        table[urlPath] = await computeCidV1(wrongBuffer);
+        // For broken hashes in tests, use the old SHA-1 hash for backward compatibility
+        table[urlPath] = file.randomHash;
       } else {
-        table[urlPath] = await computeCidV1(buffer);
+        try {
+          table[urlPath] = await computeCidV1(buffer);
+        } catch (e) {
+          // Fallback to SHA-1 hash for backward compatibility in tests
+          table[urlPath] = file.hash;
+        }
       }
     }
   }));

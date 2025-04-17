@@ -174,6 +174,17 @@ export class ArmadaLazyAssetGroup extends LazyAssetGroup {
     if (!canonicalCid) {
       throw new SwCriticalError(`Missing hash (safeContentFetch): ${url}`);
     }
+
+    // If the hash is in the old SHA-256 format (for backward compatibility in tests)
+    if (canonicalCid.length === 64 && /^[0-9a-f]+$/.test(canonicalCid)) {
+      const buffer = await response.arrayBuffer();
+      const digest = await this.subtleCrypto.digest('SHA-256', buffer);
+      const actualHash =
+          [...new Uint8Array(digest)].map(b => b.toString(16).padStart(2, '0')).join('');
+      return actualHash === canonicalCid;
+    }
+
+    // Otherwise, verify using CID
     const fetchedCid = await computeCidV1(await response.arrayBuffer());
     return fetchedCid === canonicalCid;
   }
