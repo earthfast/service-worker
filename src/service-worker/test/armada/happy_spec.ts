@@ -296,7 +296,6 @@ describe('Driver', () => {
         new Driver(scope, scope, new CacheDatabase(scope), registry, apiClient, webcrypto.subtle);
   });
 
-  // Test cases continue as before...
   it('activates without waiting', async () => {
     const skippedWaiting = await scope.startup(true);
     expect(skippedWaiting).toBe(true);
