@@ -31,11 +31,7 @@
       "angular",
       "node"
     ],
-    "baseUrl": "http://armada.local:30080",
-    "paths": {
-      "multiformats": ["node_modules/multiformats/dist/cjs/index.js"],
-      "multiformats/hashes/sha2": ["node_modules/multiformats/dist/cjs/sha2.js"]
-    }
+    "baseUrl": "http://armada.local:30080"
   },
   "exclude": [
     "./src/service-worker/test/**/*",

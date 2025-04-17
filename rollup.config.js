@@ -1,9 +1,7 @@
-import alias from '@rollup/plugin-alias';
 import commonjs from '@rollup/plugin-commonjs';
 import resolve from '@rollup/plugin-node-resolve';
 import replace from '@rollup/plugin-replace';
 import typescript from '@rollup/plugin-typescript';
-import path from 'path';
 import copy from 'rollup-plugin-copy';
 import filesize from 'rollup-plugin-filesize';
 
@@ -17,19 +15,6 @@ export default {
   },
   plugins:
       [
-        alias({
-          entries: [
-            {
-              find: 'multiformats',
-              // Use an absolute path so that Rollup does not duplicate modules.
-              replacement: path.resolve(__dirname, 'node_modules/multiformats/dist/cjs/index.js')
-            },
-            {
-              find: 'multiformats/hashes/sha2',
-              replacement: path.resolve(__dirname, 'node_modules/multiformats/dist/cjs/sha2.js')
-            },
-          ]
-        }),
         resolve({browser: true}),
         commonjs(),
         typescript({include: 'src/service-worker/**/*.ts'}),
@@ -49,5 +34,4 @@ export default {
         }),
         filesize(),
       ],
-  external: []
 };
