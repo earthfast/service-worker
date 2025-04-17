@@ -15,7 +15,6 @@ import {errorToString, SwCriticalError, SwUnrecoverableStateError} from './error
 import {IdleScheduler} from './idle';
 import {AssetGroupConfig} from './manifest';
 import {NamedCache} from './named-cache-storage';
-import {sha1Binary} from './sha1';
 
 interface Fetcher {
   fetch(req: RequestInfo, init?: RequestInit): Promise<Response>;
