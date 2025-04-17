@@ -175,18 +175,25 @@ export class ArmadaLazyAssetGroup extends LazyAssetGroup {
       throw new SwCriticalError(`Missing hash (safeContentFetch): ${url}`);
     }
 
-    // If the hash is in the old SHA-256 format (for backward compatibility in tests)
-    if (canonicalCid.length === 64 && /^[0-9a-f]+$/.test(canonicalCid)) {
+    try {
       const buffer = await response.arrayBuffer();
-      const digest = await this.subtleCrypto.digest('SHA-256', buffer);
-      const actualHash =
-          [...new Uint8Array(digest)].map(b => b.toString(16).padStart(2, '0')).join('');
-      return actualHash === canonicalCid;
-    }
 
-    // Otherwise, verify using CID
-    const fetchedCid = await computeCidV1(await response.arrayBuffer());
-    return fetchedCid === canonicalCid;
+      // If the hash is in the old SHA format (for backward compatibility in tests)
+      if (canonicalCid.length === 64 && /^[0-9a-f]+$/.test(canonicalCid)) {
+        const digest = await this.subtleCrypto.digest('SHA-256', buffer);
+        const actualHash =
+            [...new Uint8Array(digest)].map(b => b.toString(16).padStart(2, '0')).join('');
+        return actualHash === canonicalCid;
+      }
+
+      // Otherwise verify with CID v1
+      const fetchedCid = await computeCidV1(buffer);
+      return fetchedCid === canonicalCid;
+    } catch (e) {
+      // Log the error but don't swallow it - this ensures verification really fails
+      console.error(`Error verifying hash for ${url}:`, e);
+      return false;
+    }
   }
 
   protected async sha256Binary(buffer: ArrayBuffer): Promise<string> {

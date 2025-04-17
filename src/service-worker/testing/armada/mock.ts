@@ -24,7 +24,9 @@ export class MockFile {
       readonly hashThisFile: boolean, readonly brokenHash: boolean = false) {}
 
   get hash(): string {
-    return sha1(this.contents);
+    return this.brokenHash ?
+        sha1(this.contents + 'BREAK THE HASH') :  // Create bad hash for broken files
+        sha1(this.contents);
   }
 
   async getCid(): Promise<string> {
@@ -38,7 +40,10 @@ export class MockFile {
   }
 
   async getRandomCid(): Promise<string> {
-    const randomContent = ((Math.random() * 10000000) | 0).toString();
+    // For broken hashes, create intentionally different content
+    const randomContent = this.brokenHash ? this.contents + 'BREAK THE HASH' :
+                                            ((Math.random() * 10000000) | 0).toString();
+
     const encoder = new TextEncoder();
     const buffer = encoder.encode(randomContent).buffer;
     return computeCidV1(buffer);
@@ -49,14 +54,14 @@ export class MockFileSystemBuilder {
   private resources = new Map<string, MockFile>();
 
   addFile(
-      path: string, contents: string, headers?: HeaderMap, port?: number,
-      additional: string = ''): MockFileSystemBuilder {
-    this.resources.set(path, new MockFile(path, contents, headers, true));
+      path: string, contents: string, headers?: HeaderMap, port?: number, additional: string = '',
+      brokenHash: boolean = false): MockFileSystemBuilder {
+    this.resources.set(path, new MockFile(path, contents, headers, true, brokenHash));
 
     const projectId = encodeURIComponent(TEST_PROJECT_ID);
     const pathKey =
         `/v1/content?project_id=${projectId}&resource=${encodeURIComponent(path)}${additional}`;
-    this.resources.set(pathKey, new MockFile(path, contents, headers, true));
+    this.resources.set(pathKey, new MockFile(path, contents, headers, true, brokenHash));
 
     return this;
   }
@@ -417,15 +422,13 @@ export async function cidHashTableForFs(
       const buffer = encoder.encode(file.contents).buffer;
 
       if (file.brokenHash || breakHashes[filePath]) {
-        // For broken hashes in tests, use the old SHA-1 hash for backward compatibility
-        table[urlPath] = file.randomHash;
+        // For broken hashes, create an intentionally wrong CID
+        // by using a different content than what's actually served
+        const wrongContent = file.contents + 'BREAK THE HASH';
+        const wrongBuffer = encoder.encode(wrongContent).buffer;
+        table[urlPath] = await computeCidV1(wrongBuffer);
       } else {
-        try {
-          table[urlPath] = await computeCidV1(buffer);
-        } catch (e) {
-          // Fallback to SHA-1 hash for backward compatibility in tests
-          table[urlPath] = file.hash;
-        }
+        table[urlPath] = await computeCidV1(buffer);
       }
     }
   }));

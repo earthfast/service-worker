@@ -66,8 +66,12 @@ TEST_CONTENT_NODES_PORTS.forEach(
 const distAltPort = distAltPortBuilder.build();
 
 const brokenFs = new MockFileSystemBuilder()
-                     .addFile('/foo.txt', 'this is foo (broken)')
-                     .addFile('/bar.txt', 'this is bar (broken)')
+                     .addFile(
+                         '/foo.txt', 'this is foo (broken)', {}, undefined, undefined,
+                         true)  // Add brokenHash flag
+                     .addFile(
+                         '/bar.txt', 'this is bar (broken)', {}, undefined, undefined,
+                         true)  // Add brokenHash flag
                      .build();
 
 // Setup function to create manifests with CID hash tables
