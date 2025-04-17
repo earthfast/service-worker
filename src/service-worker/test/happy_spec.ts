@@ -2555,7 +2555,13 @@ describe('Driver', () => {
 
     function createSwForFreshnessStrategy() {
       const freshnessManifest: Manifest = {...manifest, navigationRequestStrategy: 'freshness'};
-      const server = serverBuilderBase.withManifest(freshnessManifest).build();
+      const serverBuilder =
+          new MockServerStateBuilder()
+              .withStaticFiles(dist)
+              .withRedirect('/redirected.txt', '/redirect-target.txt', 'this was a redirect')
+              .withError('/error.txt');
+
+      const server = serverBuilder.withManifest(freshnessManifest).build();
       const scope = new SwTestHarnessBuilder().withServerState(server).build();
       const driver = new Driver(scope, scope, new CacheDatabase(scope));
 
