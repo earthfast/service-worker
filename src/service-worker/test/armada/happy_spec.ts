@@ -14,45 +14,18 @@ import 'isomorphic-fetch';
 import {webcrypto} from 'crypto';
 
 import {ArmadaAPIClientImpl} from '../../src/armada/api';
-import {computeCidV1} from '../../src/armada/cid';
 import {ArmadaDriver, ArmadaDriver as Driver} from '../../src/armada/driver';
 import {DynamicNodeRegistry} from '../../src/armada/registry';
 import {CacheDatabase} from '../../src/db-cache';
 import {DriverReadyState} from '../../src/driver';
-import {AssetGroupConfig, DataGroupConfig, Manifest} from '../../src/manifest';
+import {Manifest} from '../../src/manifest';
 import {sha1} from '../../src/sha1';
-import {MockFileSystem, MockFileSystemBuilder, MockServerStateBuilder} from '../../testing/armada/mock';
+import {cidHashTableForFs, MockFileSystem, MockFileSystemBuilder, MockServerStateBuilder} from '../../testing/armada/mock';
 import {SwTestHarness, SwTestHarnessBuilder} from '../../testing/armada/scope';
 import {MockCache} from '../../testing/cache';
 import {MockWindowClient} from '../../testing/clients';
 import {MockRequest, MockResponse} from '../../testing/fetch';
 import {envIsSupported, processNavigationUrls, TEST_BOOTSTRAP_NODE, TEST_BOOTSTRAP_NODES, TEST_CONTENT_NODES, TEST_CONTENT_NODES_PORTS, TEST_PROJECT_ID} from '../../testing/utils';
-
-// Helper function to create CID-based hash tables
-async function cidHashTableForFs(
-    fs: MockFileSystem, fileFilter = {}, baseHref = ''): Promise<{[url: string]: string}> {
-  const table: {[url: string]: string} = {};
-
-  await Promise.all(fs.list().map(async (filePath) => {
-    const file = fs.lookup(filePath);
-    if (!file || !file.hashThisFile) return;
-
-    const urlPath = baseHref + filePath;
-    const encoder = new TextEncoder();
-    const buffer = encoder.encode(file.contents).buffer;
-
-    if (file.brokenHash) {
-      // For broken hashes, use a random value
-      const randomContent = ((Math.random() * 10000000) | 0).toString();
-      const randomBuffer = encoder.encode(randomContent).buffer;
-      table[urlPath] = await computeCidV1(randomBuffer);
-    } else {
-      table[urlPath] = await computeCidV1(buffer);
-    }
-  }));
-
-  return table;
-}
 
 (function() {
 // Skip environments that don't support the minimum APIs needed to run the SW tests.
@@ -1765,7 +1738,13 @@ describe('Driver', () => {
 
     function createSwForFreshnessStrategy() {
       const freshnessManifest: Manifest = {...manifest, navigationRequestStrategy: 'freshness'};
-      const server = serverBuilderBase.withManifest(freshnessManifest).build();
+      const serverBuilder =
+          new MockServerStateBuilder()
+              .withStaticFiles(dist)
+              .withRedirect('/redirected.txt', '/redirect-target.txt', 'this was a redirect')
+              .withError('/error.txt');
+
+      const server = serverBuilder.withManifest(freshnessManifest).build();
       const scope = new SwTestHarnessBuilder().withServerState(server).build();
       const apiClient = new ArmadaAPIClientImpl(scope, scope, 'http:', TEST_PROJECT_ID);
       const registry = new DynamicNodeRegistry(apiClient, [TEST_BOOTSTRAP_NODE], 10000);

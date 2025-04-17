@@ -381,17 +381,20 @@ export function tmpManifestSingleAssetGroup(fs: MockFileSystem): Manifest {
 }
 
 // Traditional SHA1 hash table generation (keep for backward compatibility)
-export function tmpHashTableForFs(
+function tmpHashTableForFs(
     fs: MockFileSystem, breakHashes: {[url: string]: boolean} = {},
     baseHref = '/'): {[url: string]: string} {
+  // Create a basic hashTable with SHA-1 hashes for backward compatibility
   const table: {[url: string]: string} = {};
   fs.list().forEach(filePath => {
     const urlPath = joinPaths(baseHref, filePath);
-    const file = fs.lookup(filePath)!;
+    const file = fs.lookup(filePath);
+    if (!file) return;
+
     if (file.brokenHash) {
       table[urlPath] = file.randomHash;
     } else if (file.hashThisFile) {
-      table[urlPath] = file.hash;
+      table[urlPath] = file.hash;  // Use SHA-1 hash for backward compatibility
       if (breakHashes[filePath]) {
         table[urlPath] = table[urlPath].split('').reverse().join('');
       }
@@ -400,25 +403,29 @@ export function tmpHashTableForFs(
   return table;
 }
 
-// New async CID-based hash table generation
+// CID-based hash table function for tests
 export async function cidHashTableForFs(
     fs: MockFileSystem, breakHashes: {[url: string]: boolean} = {},
     baseHref = '/'): Promise<{[url: string]: string}> {
   const table: {[url: string]: string} = {};
 
-  // Process each file in the filesystem
   await Promise.all(fs.list().map(async (filePath) => {
     const urlPath = joinPaths(baseHref, filePath);
-    const file = fs.lookup(filePath)!;
+    const file = fs.lookup(filePath);
+    if (!file) return;
 
-    if (file.brokenHash) {
-      table[urlPath] = await file.getRandomCid();
-    } else if (file.hashThisFile) {
-      const cid = await file.getCid();
-      table[urlPath] = breakHashes[filePath] ?
-          // For broken hashes, use a different CID entirely rather than trying to reverse
-          await file.getRandomCid() :
-          cid;
+    if (file.hashThisFile) {
+      const encoder = new TextEncoder();
+      const buffer = encoder.encode(file.contents).buffer;
+
+      if (file.brokenHash || breakHashes[filePath]) {
+        // Generate a different CID for broken hashes
+        const wrongContent = file.contents + 'BROKEN';
+        const wrongBuffer = encoder.encode(wrongContent).buffer;
+        table[urlPath] = await computeCidV1(wrongBuffer);
+      } else {
+        table[urlPath] = await computeCidV1(buffer);
+      }
     }
   }));
 
