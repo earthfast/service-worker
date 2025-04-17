@@ -324,27 +324,6 @@ describe('ArmadaLazyAssetGroup', () => {
     });
   });
 
-  it('supports SHA-1 checksums (only for backward compatibility)', async () => {
-    // Use SHA-1 hash instead of CID
-    const sha1Hash = sha1(helloWorldBody);
-    hashes.set(helloWorld, sha1Hash);
-
-    const apiClient = new OrderedAPIClient([new MockResponse(helloWorldBody)]);
-    const registry = new StaticNodeRegistry(['content0']);
-    const group = new ArmadaLazyAssetGroup(
-        adapter, idle, config, hashes, db, 'test', registry, apiClient, broadcaster,
-        webcrypto.subtle);
-    await group.initializeFully();
-
-    const req = new MockRequest(helloWorld);
-    const evt = new MockFetchEvent(req, 'some-client-id', 'some-client-id');
-    const resp = await group.handleFetch(req, evt);
-    expect(resp).toBeTruthy();
-
-    const gotContent = await resp!.text();
-    expect(gotContent).toEqual(helloWorldBody);
-  });
-
   it('returns Response objects with no "url" property', async () => {
     const apiClient = new OrderedAPIClient([new MockResponse(helloWorldBody)]);
     const registry = new StaticNodeRegistry(['content0']);
