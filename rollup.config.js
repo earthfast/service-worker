@@ -6,14 +6,16 @@ import copy from 'rollup-plugin-copy';
 
 export default {
   input: 'src/service-worker/main.ts',
-  output: {file: 'dist/templates/main.js.tmpl', format: 'iife'},
+  output: {
+    file: 'dist/templates/main.js.tmpl',
+    format: 'iife',
+    inlineDynamicImports: true,
+  },
   plugins:
       [
-        // Resolve modules from node_modules so that multiformats will be bundled.
         resolve({
           browser: true,
         }),
-        // Convert CommonJS modules (like multiformats) to ES modules.
         commonjs(),
         typescript({
           include: 'src/service-worker/**/*.ts',
