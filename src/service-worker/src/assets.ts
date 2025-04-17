@@ -8,13 +8,13 @@
 
 import {Adapter} from './adapter';
 import {CacheState, NormalizedUrl, UpdateCacheStatus, UpdateSource, UrlMetadata} from './api';
-import {computeCidV1} from './armada/cid';
 import {Database, Table} from './database';
 import {CacheTable} from './db-cache';
 import {errorToString, SwCriticalError, SwUnrecoverableStateError} from './error';
 import {IdleScheduler} from './idle';
 import {AssetGroupConfig} from './manifest';
 import {NamedCache} from './named-cache-storage';
+import {sha1Binary} from './sha1';
 
 interface Fetcher {
   fetch(req: RequestInfo, init?: RequestInit): Promise<Response>;
@@ -381,7 +381,7 @@ export abstract class AssetGroup {
     if (this.hashes.has(url)) {
       // It turns out this resource does have a hash. Look it up. Unless the fetched version
       // matches this hash, it's invalid and the whole manifest may need to be thrown out.
-      const canonicalCid = this.hashes.get(url)!;
+      const canonicalHash = this.hashes.get(url)!;
 
       // Ideally, the resource would be requested with cache-busting to guarantee the SW gets
       // the freshest version. However, doing this would eliminate any chance of the response
@@ -398,35 +398,39 @@ export abstract class AssetGroup {
       // Fetch the resource from the network (possibly hitting the HTTP cache).
       let response = await this.safeFetch(req);
 
-      // If the response is successful, compute its CID.
-      if (response.ok) {
+      // Decide whether a cache-busted request is necessary. A cache-busted request is necessary
+      // only if the request was successful but the hash of the retrieved contents does not match
+      // the canonical hash from the manifest.
+      let makeCacheBustedRequest = response.ok;
+      if (makeCacheBustedRequest) {
         // The request was successful. A cache-busted request is only necessary if the hashes
         // don't match.
         // (Make sure to clone the response so it can be used later if it proves to be valid.)
-        const fetchedCid = await computeCidV1(await response.clone().arrayBuffer());
+        const fetchedHash = sha1Binary(await response.clone().arrayBuffer());
+        makeCacheBustedRequest = (fetchedHash !== canonicalHash);
+      }
 
-        // Make a cache busted request to the network, if necessary.
-        if (fetchedCid !== canonicalCid) {
-          // Hash failure, the version that was retrieved under the default URL did not have the
-          // hash expected. This could be because the HTTP cache got in the way and returned stale
-          // data, or because the version on the server really doesn't match. A cache-busting
-          // request will differentiate these two situations.
-          // TODO: handle case where the URL has parameters already (unlikely for assets).
-          const cacheBustReq = this.adapter.newRequest(this.cacheBust(req.url));
-          response = await this.safeFetch(cacheBustReq);
+      // Make a cache busted request to the network, if necessary.
+      if (makeCacheBustedRequest) {
+        // Hash failure, the version that was retrieved under the default URL did not have the
+        // hash expected. This could be because the HTTP cache got in the way and returned stale
+        // data, or because the version on the server really doesn't match. A cache-busting
+        // request will differentiate these two situations.
+        // TODO: handle case where the URL has parameters already (unlikely for assets).
+        const cacheBustReq = this.adapter.newRequest(this.cacheBust(req.url));
+        response = await this.safeFetch(cacheBustReq);
 
-          // If the response was successful, check the contents against the canonical hash.
-          if (response.ok) {
-            // Hash the contents.
-            // (Make sure to clone the response so it can be used later if it proves to be valid.)
-            const cacheBustedCid = await computeCidV1(await response.clone().arrayBuffer());
+        // If the response was successful, check the contents against the canonical hash.
+        if (response.ok) {
+          // Hash the contents.
+          // (Make sure to clone the response so it can be used later if it proves to be valid.)
+          const cacheBustedHash = sha1Binary(await response.clone().arrayBuffer());
 
-            // If the cache-busted version doesn't match, then the manifest is not an accurate
-            // representation of the server's current set of files, and the SW should give up.
-            if (canonicalCid !== cacheBustedCid) {
-              throw new SwCriticalError(`CID mismatch (cacheBustedFetchFromNetwork): ${
-                  req.url}: expected ${canonicalCid}, got ${cacheBustedCid} (after cache busting)`);
-            }
+          // If the cache-busted version doesn't match, then the manifest is not an accurate
+          // representation of the server's current set of files, and the SW should give up.
+          if (canonicalHash !== cacheBustedHash) {
+            throw new SwCriticalError(`Hash mismatch (cacheBustedFetchFromNetwork): ${
+                req.url}: expected ${canonicalHash}, got ${cacheBustedHash} (after cache busting)`);
           }
         }
       }
