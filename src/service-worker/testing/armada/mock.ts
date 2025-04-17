@@ -412,26 +412,26 @@ export async function cidHashTableForFs(
     baseHref = '/'): Promise<{[url: string]: string}> {
   const table: {[url: string]: string} = {};
 
-  await Promise.all(fs.list().map(async (filePath) => {
+  for (const filePath of fs.list()) {
     const urlPath = joinPaths(baseHref, filePath);
     const file = fs.lookup(filePath);
-    if (!file) return;
+    if (!file) continue;
 
     if (file.hashThisFile) {
       const encoder = new TextEncoder();
-      const buffer = encoder.encode(file.contents).buffer;
 
       if (file.brokenHash || breakHashes[filePath]) {
-        // For broken hashes, create an intentionally wrong CID
-        // by using a different content than what's actually served
-        const wrongContent = file.contents + 'BREAK THE HASH';
-        const wrongBuffer = encoder.encode(wrongContent).buffer;
-        table[urlPath] = await computeCidV1(wrongBuffer);
+        // For test cases with broken files, create an intentionally incorrect CID
+        // This makes the 'broken' file content validation fail correctly
+        const alternateContent = 'INTENTIONALLY WRONG CONTENT';
+        const altBuffer = encoder.encode(alternateContent).buffer;
+        table[urlPath] = await computeCidV1(altBuffer);
       } else {
+        const buffer = encoder.encode(file.contents).buffer;
         table[urlPath] = await computeCidV1(buffer);
       }
     }
-  }));
+  }
 
   return table;
 }
