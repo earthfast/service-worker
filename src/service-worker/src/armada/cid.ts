@@ -1,5 +1,4 @@
-// src/cid.ts
-import {CID} from 'multiformats/cid';
+import {CID} from 'multiformats';
 import {sha256} from 'multiformats/hashes/sha2';
 
 /**
