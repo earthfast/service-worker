@@ -1,27 +1,22 @@
-import {createRequire} from 'module';
-
-// In CommonJS, __dirname is available so we can use the built-in require.
-// Otherwise (in an ESM context) fallback to createRequire.
-const requireFunc: NodeRequire =
-    typeof __dirname !== 'undefined' ? require : createRequire(import.meta.url);
-
-// Force loading the CommonJS entry point by specifying the full path.
-const MF = requireFunc('multiformats/dist/cjs/index.js');
-
-// Extract the needed modules.
-const {CID} = MF;
-const {sha256} = MF.hashes;
+import {CID} from 'multiformats';
+import {sha256} from 'multiformats/hashes/sha2';
+// Import the type for clarity.
+import type {MultihashDigest} from 'multiformats/hashes/interface';
 
 /**
- * Computes an IPFS CID v1 for the given ArrayBuffer.
- * Uses the sha2-256 algorithm.
+ * Computes an IPFS CID v1 for the given asset data.
  *
- * @param buffer The data as an ArrayBuffer.
- * @returns A Promise that resolves to the CID (as a string).
+ * Uses the sha2-256 digest algorithm.
+ *
+ * @param buffer - The asset data as an ArrayBuffer.
+ * @returns A Promise resolving to the computed CID string.
  */
-export function computeCidV1(buffer: ArrayBuffer): Promise<string> {
-  return sha256.digest(new Uint8Array(buffer)).then((digest: any) => {
-    const cid = CID.create(1, sha256.code, digest);
-    return cid.toString();  // Returns a base32 string by default.
-  });
+export async function computeCidV1(buffer: ArrayBuffer): Promise<string> {
+  // Await the digest. Make sure the result conforms to MultihashDigest<18>
+  const digestRaw = await sha256.digest(new Uint8Array(buffer));
+  // Sometimes the returned value's type is not exactly what we need; we can force a type assertion:
+  const digest = digestRaw as unknown as MultihashDigest<18>;
+  // Create the CID v1 using the digest and sha256's code.
+  const cid = CID.create(1, sha256.code, digest);
+  return cid.toString();  // Typically a base32 string.
 }

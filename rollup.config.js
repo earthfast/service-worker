@@ -1,3 +1,4 @@
+import alias from '@rollup/plugin-alias';
 import commonjs from '@rollup/plugin-commonjs';
 import resolve from '@rollup/plugin-node-resolve';
 import replace from '@rollup/plugin-replace';
@@ -11,22 +12,41 @@ export default {
     file: 'dist/templates/main.js.tmpl',
     format: 'iife',
     inlineDynamicImports: true,
+    globals: {}
   },
   plugins:
       [
-        resolve({browser: true}),
+        alias({
+          entries: [
+            {find: 'multiformats', replacement: 'node_modules/multiformats/dist/cjs/index.js'},
+            {
+              find: 'multiformats/hashes/sha2',
+              replacement: 'node_modules/multiformats/dist/cjs/sha2.js'
+            },
+          ]
+        }),
+        resolve({
+          browser: true,
+        }),
         commonjs(),
-        typescript({include: 'src/service-worker/**/*.ts'}),
+        typescript({
+          include: 'src/service-worker/**/*.ts',
+        }),
         replace({
           values: {
             'process.env.BOOTSTRAP_NODES': JSON.stringify('{{.BootstrapNodes}}'),
-            'process.env.CONTENT_NODE_REFRESH_INTERVAL_MS': 60 * 60 * 1000,
+            'process.env.CONTENT_NODE_REFRESH_INTERVAL_MS': (60 * 60 * 1000),
             'process.env.CONTENT_NODES': JSON.stringify('{{.ContentNodes}}'),
             'process.env.PROJECT_ID': JSON.stringify('{{.ProjectID}}'),
           },
           preventAssignment: true,
         }),
-        copy({targets: [{src: 'src/landing-page/*', dest: 'dist/public'}]}),
+        copy({
+          targets: [
+            {src: 'src/landing-page/*', dest: 'dist/public'},
+          ],
+        }),
         filesize(),
-      ]
+      ],
+  external: []
 };
