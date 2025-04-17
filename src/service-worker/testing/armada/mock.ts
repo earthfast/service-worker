@@ -381,7 +381,7 @@ export function tmpManifestSingleAssetGroup(fs: MockFileSystem): Manifest {
 }
 
 // Traditional SHA1 hash table generation (keep for backward compatibility)
-function tmpHashTableForFs(
+export function tmpHashTableForFs(
     fs: MockFileSystem, breakHashes: {[url: string]: boolean} = {},
     baseHref = '/'): {[url: string]: string} {
   // Create a basic hashTable with SHA-1 hashes for backward compatibility

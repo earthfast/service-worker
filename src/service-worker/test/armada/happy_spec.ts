@@ -20,7 +20,7 @@ import {CacheDatabase} from '../../src/db-cache';
 import {DriverReadyState} from '../../src/driver';
 import {Manifest} from '../../src/manifest';
 import {sha1} from '../../src/sha1';
-import {cidHashTableForFs, MockFileSystem, MockFileSystemBuilder, MockServerStateBuilder} from '../../testing/armada/mock';
+import {cidHashTableForFs, MockFileSystem, MockFileSystemBuilder, MockServerStateBuilder, tmpHashTableForFs} from '../../testing/armada/mock';
 import {SwTestHarness, SwTestHarnessBuilder} from '../../testing/armada/scope';
 import {MockCache} from '../../testing/cache';
 import {MockWindowClient} from '../../testing/clients';
