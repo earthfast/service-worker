@@ -1571,7 +1571,7 @@ describe('Driver', () => {
     });
 
     describe('unrecoverable state', () => {
-      const generateMockServerState = (fileSystem: MockFileSystem) => {
+      const generateMockServerState = async (fileSystem: MockFileSystem) => {
         const manifest: Manifest = {
           configVersion: 1,
           timestamp: 1234567890123,
@@ -1587,7 +1587,7 @@ describe('Driver', () => {
           dataGroups: [],
           navigationUrls: processNavigationUrls(''),
           navigationRequestStrategy: 'performance',
-          hashTable: tmpHashTableForFs(fileSystem),
+          hashTable: await cidHashTableForFs(fileSystem),
         };
 
         return {
@@ -1610,8 +1610,9 @@ describe('Driver', () => {
                                  .addFile('/bar.hash.js', 'console.log("BAR");')
                                  .build();
 
-        const {serverState: originalServer, manifest} = generateMockServerState(originalFiles);
-        const {serverState: updatedServer} = generateMockServerState(updatedFiles);
+        const {serverState: originalServer, manifest} =
+            await generateMockServerState(originalFiles);
+        const {serverState: updatedServer} = await generateMockServerState(updatedFiles);
 
         // Create initial server state and initialize the SW.
         scope = new SwTestHarnessBuilder().withServerState(originalServer).build();
@@ -1663,8 +1664,9 @@ describe('Driver', () => {
                                  .addFile('/bar.hash.js', 'console.log("BAR");')
                                  .build();
 
-        const {serverState: originalServer, manifest} = generateMockServerState(originalFiles);
-        const {serverState: updatedServer} = generateMockServerState(updatedFiles);
+        const {serverState: originalServer, manifest} =
+            await generateMockServerState(originalFiles);
+        const {serverState: updatedServer} = await generateMockServerState(updatedFiles);
 
         // Create initial server state and initialize the SW.
         scope = new SwTestHarnessBuilder().withServerState(originalServer).build();
