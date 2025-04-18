@@ -1,7 +1,10 @@
 import {Adapter} from '../adapter';
 
+import {RequestTracker} from './request-tracker';
+
 export type ContentAPIClient = {
-  getContent(resource: string, host: string, retry?: string, cacheBust?: boolean): Promise<Response>;
+  getContent(
+      resource: string, host: string, retry?: string, cacheBust?: boolean): Promise<Response>;
 }
 
 export type TopologyAPIClient = {
@@ -22,17 +25,20 @@ interface Fetcher {
 
 export class ArmadaAPIClientImpl implements ArmadaAPIClient {
   public static readonly cacheBustKey: string = 'cache-bust';
+  private requestTracker?: RequestTracker;
 
   constructor(
       protected adapter: Adapter, protected fetcher: Fetcher, protected protocol: HTTPProtocol,
-      public readonly projectId: string) {}
+      public readonly projectId: string) {
+    // Initialize the request tracker if available
+    if (typeof RequestTracker.getInstance === 'function' && 'clients' in this.fetcher) {
+      this.requestTracker =
+          RequestTracker.getInstance(this.fetcher as ServiceWorkerGlobalScope, adapter);
+    }
+  }
 
-  async getContent(
-    resource: string, 
-    host: string, 
-    retry?: string, 
-    cacheBust?: boolean
-  ): Promise<Response> {
+  async getContent(resource: string, host: string, retry?: string, cacheBust?: boolean):
+      Promise<Response> {
     const url = new URL('/v1/content', `${this.protocol}//${host}`);
 
     url.searchParams.append('project_id', this.projectId);
@@ -45,7 +51,43 @@ export class ArmadaAPIClientImpl implements ArmadaAPIClient {
     }
 
     const req = this.adapter.newRequest(url.toString());
-    return this.fetcher.fetch(req);
+
+    // Track the request before making it
+    if (this.requestTracker) {
+      this.requestTracker.trackRequest(
+          {url: url.toString(), node: host, method: 'GET', success: true, resource});
+    }
+
+    try {
+      const response = await this.fetcher.fetch(req);
+
+      // Update the request tracking with the status
+      if (this.requestTracker) {
+        this.requestTracker.trackRequest({
+          url: url.toString(),
+          node: host,
+          method: 'GET',
+          status: response.status,
+          success: response.ok,
+          resource
+        });
+      }
+
+      return response;
+    } catch (error) {
+      // Track failed requests
+      if (this.requestTracker) {
+        this.requestTracker.trackRequest({
+          url: url.toString(),
+          node: host,
+          method: 'GET',
+          success: false,
+          error: error.toString(),
+          resource
+        });
+      }
+      throw error;
+    }
   }
 
   async getContentNodes(host: string): Promise<NodesResponse> {
@@ -53,10 +95,44 @@ export class ArmadaAPIClientImpl implements ArmadaAPIClient {
     url.searchParams.append('project_id', this.projectId);
     const req = this.adapter.newRequest(url.toString());
 
-    const resp = await this.fetcher.fetch(req);
-    if (!resp.ok) {
-      throw new Error(`Failed to fetch content nodes (status: ${resp.status})`);
+    // Track the request before making it
+    if (this.requestTracker) {
+      this.requestTracker.trackRequest(
+          {url: url.toString(), node: host, method: 'GET', success: true, resource: 'nodes'});
     }
-    return (await resp.json()) as NodesResponse;
+
+    try {
+      const resp = await this.fetcher.fetch(req);
+
+      // Update the request tracking with the status
+      if (this.requestTracker) {
+        this.requestTracker.trackRequest({
+          url: url.toString(),
+          node: host,
+          method: 'GET',
+          status: resp.status,
+          success: resp.ok,
+          resource: 'nodes'
+        });
+      }
+
+      if (!resp.ok) {
+        throw new Error(`Failed to fetch content nodes (status: ${resp.status})`);
+      }
+      return (await resp.json()) as NodesResponse;
+    } catch (error) {
+      // Track failed requests
+      if (this.requestTracker) {
+        this.requestTracker.trackRequest({
+          url: url.toString(),
+          node: host,
+          method: 'GET',
+          success: false,
+          error: error.toString(),
+          resource: 'nodes'
+        });
+      }
+      throw error;
+    }
   }
 }

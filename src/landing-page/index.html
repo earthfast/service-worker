@@ -20,21 +20,570 @@
       </div>
       <div id="spinner" class="spinner"></div>
     </div>
-    <!-- <p id="error"></p> -->
-  </div>
 
+    <!-- Developer Tools Notice -->
+    <div id="dev-tools-notice" class="dev-tools-notice">
+      <p>Please open Developer Tools (F12) and go to the Network tab before continuing.</p>
+      <p>Once you have the Network tab open, click the button below:</p>
+      <button id="start-loading-button">Start Loading</button>
+    </div>
+
+    <!-- Developer Tools Instructions (only visible when the notice is not active) -->
+    <div class="dev-tools-instructions">
+      <p class="help-text">To follow along with the loading process, open your browser's developer tools (F12) and go to
+        the Network tab.</p>
+    </div>
+
+    <!-- New container for stages -->
+    <div class="stages-container" id="stages-container">
+      <!-- Stage 1: Manifest Loading -->
+      <div class="stage" id="stage-manifest">
+        <div class="stage-header stage-toggle-header">
+          <div class="stage-icon pending" id="stage-manifest-icon">
+            <span>1</span>
+          </div>
+          <div class="stage-title">Asset Manifest Consensus</div>
+          <div class="stage-progress" id="stage-manifest-progress">
+            <div class="stage-progress-text">0/0 nodes</div>
+          </div>
+          <div class="stage-time" id="stage-manifest-time"></div>
+          <div class="stage-toggle">▼</div>
+        </div>
+        <div class="stage-content">
+          <div id="stage-manifest-content">
+            <p>Waiting for asset manifest consensus from content nodes...</p>
+            <p class="help-text">Tip: Search for "earthfast.json" in the Network panel to see manifest responses from
+              each node.</p>
+            <ul class="manifest-list" id="manifest-nodes-list">
+              <!-- Manifest nodes will be loaded dynamically -->
+            </ul>
+          </div>
+        </div>
+      </div>
+
+      <!-- Stage 2: index.html loaded -->
+      <div class="stage" id="stage-index">
+        <div class="stage-header stage-toggle-header">
+          <div class="stage-icon pending" id="stage-index-icon">
+            <span>2</span>
+          </div>
+          <div class="stage-title">index.html Loaded</div>
+          <div class="stage-time" id="stage-index-time"></div>
+          <div class="stage-toggle">▼</div>
+        </div>
+        <div class="stage-content">
+          <div id="stage-index-content">
+            <p>Loading index.html from content nodes...</p>
+            <p class="help-text">Tip: Search for "index.html" in the Network panel to see the page load.</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Stage 3: Request Table -->
+      <div class="stage" id="stage-resources">
+        <div class="stage-header stage-toggle-header">
+          <div class="stage-icon pending" id="stage-resources-icon">
+            <span>3</span>
+          </div>
+          <div class="stage-title">Network Requests</div>
+          <div class="stage-time" id="stage-resources-time"></div>
+          <div class="stage-toggle">▼</div>
+        </div>
+        <div class="stage-content">
+          <div id="stage-resources-content">
+            <p>Loading website resources from content nodes...</p>
+            <p class="help-text">Tip: Use these filters in the Network panel to see different types of requests:</p>
+            <ul class="filter-list">
+              <li><span class="filter-type">CSS:</span> <code class="filter-code">*.css</code></li>
+              <li><span class="filter-type">JavaScript:</span> <code class="filter-code">*.js</code></li>
+              <li><span class="filter-type">Images:</span> <code class="filter-code">*.svg, *.png, *.jpg</code></li>
+            </ul>
+            <div class="table-container">
+              <table class="requests-table" id="requests-table">
+                <thead>
+                  <tr>
+                    <th>ID</th>
+                    <th>Time</th>
+                    <th>Resource</th>
+                    <th>Node</th>
+                    <th>Status</th>
+                  </tr>
+                </thead>
+                <tbody id="requests-table-body">
+                  <!-- Requests will be loaded dynamically -->
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Stage 4: Site Ready -->
+      <div class="stage" id="stage-ready">
+        <div class="stage-header stage-toggle-header">
+          <div class="stage-icon pending" id="stage-ready-icon">
+            <span>4</span>
+          </div>
+          <div class="stage-title">Website Ready</div>
+          <div class="stage-time" id="stage-ready-time"></div>
+          <div class="stage-toggle">▼</div>
+        </div>
+        <div class="stage-content">
+          <div id="stage-ready-content">
+            <p>All resources loaded successfully. The website is ready to view.</p>
+            <button id="stage-ready-button" class="continue-button">Continue to website</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
   <script>
+    const urlParams = new URLSearchParams(window.location.search);
+    const isSecureViewer = urlParams.has('secure_viewer');
+
     const showSpinner = localStorage.getItem('showSpinner') !== 'false';
     const serviceWorker = '/earthfast-sw.js';
+    const requestsLog = null;
+    const requestsStats = null;
+    const stageReadyButton = document.getElementById('stage-ready-button');
+
+    // Global state
+    let readyToLoad = false;
+    let hasRedirected = false;  // New flag to prevent infinite loops
+
+    // Request counter for generating unique IDs
+    let requestCounter = 0;
+
+    // Track the requests for logging
+    let requests = [];
+    const maxRequests = 50;  // Maximum number of requests to display
+
+    // Stats for requests to nodes
+    const requestStats = {
+      total: 0,
+      success: 0,
+      failed: 0,
+      nodes: new Set()
+    };
+
+    // Node and manifest registry
+    const manifestNodes = {
+      total: 0,
+      success: 0,
+      nodes: {}
+    };
+
+    // Stage states
+    const stages = {
+      'stage-manifest': { started: false, completed: false, startTime: null, endTime: null },
+      'stage-index': { started: false, completed: false, startTime: null, endTime: null },
+      'stage-resources': { started: false, completed: false, startTime: null, endTime: null },
+      'stage-ready': { started: false, completed: false, startTime: null, endTime: null }
+    };
+
+    function formatTimestamp() {
+      const now = new Date();
+      return `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(
+        2, '0')}:${now.getSeconds().toString().padStart(2, '0')}`;
+    }
+
+    function formatRequestTimestamp(timestamp) {
+      const date = new Date(timestamp);
+      return `${date.getHours().toString().padStart(2, '0')}:${date.getMinutes().toString().padStart(
+        2, '0')}:${date.getSeconds().toString().padStart(2, '0')}`;
+    }
+
+    function formatTimeDuration(startTime, endTime) {
+      if (!startTime || !endTime) return '';
+      const duration = Math.round((endTime - startTime) / 1000);
+      if (duration < 60) {
+        return `${duration}s`;
+      } else {
+        const minutes = Math.floor(duration / 60);
+        const seconds = duration % 60;
+        return `${minutes}m ${seconds}s`;
+      }
+    }
+
+    // Update visual state of a stage
+    function updateStageStatus(stageId, status, message = null) {
+      const stage = document.getElementById(stageId);
+      const icon = document.getElementById(`${stageId}-icon`);
+      const content = document.getElementById(`${stageId}-content`);
+      const timeEl = document.getElementById(`${stageId}-time`);
+
+      // Remove previous classes
+      icon.classList.remove('pending', 'running', 'success', 'error');
+
+      // If the stage is starting
+      if (status === 'running' && !stages[stageId].started) {
+        stages[stageId].started = true;
+        stages[stageId].startTime = Date.now();
+        icon.classList.add('running');
+        stage.classList.add('expanded');
+
+        // Adjust height automatically
+        const contentWrapper = stage.querySelector('.stage-content');
+        contentWrapper.style.height = 'auto';
+      }
+
+      // Update content if a message is provided
+      if (message) {
+        content.innerHTML = message;
+        updateExpandedSectionHeights();
+      }
+
+      // Update icon according to status
+      icon.classList.add(status);
+
+      // If the stage is completed
+      if ((status === 'success' || status === 'error') && !stages[stageId].completed) {
+        stages[stageId].completed = true;
+        stages[stageId].endTime = Date.now();
+        timeEl.textContent = formatTimeDuration(stages[stageId].startTime, stages[stageId].endTime);
+
+        // If it's the last stage (Website Ready) and was successful
+        if (stageId === 'stage-ready' && status === 'success') {
+          const button = document.getElementById('stage-ready-button');
+          if (button) {
+            button.style.display = 'block';
+            // Update the button handler
+            button.onclick = function () {
+              if (!hasRedirected) {
+                hasRedirected = true;
+                // Remove the secure_viewer parameter from the URL
+                const url = new URL(window.location.href);
+                url.searchParams.delete('secure_viewer');
+                window.location.href = url.toString();
+              }
+            };
+          }
+        }
+
+        // Start the next stage if this one was successful
+        if (status === 'success') {
+          const nextStageId = getNextStage(stageId);
+          if (nextStageId) {
+            updateStageStatus(nextStageId, 'running');
+          }
+        }
+      }
+    }
+
+    // Get the next stage in the sequence
+    function getNextStage(currentStageId) {
+      const stageSequence = ['stage-manifest', 'stage-index', 'stage-resources', 'stage-ready'];
+
+      const currentIndex = stageSequence.indexOf(currentStageId);
+      if (currentIndex !== -1 && currentIndex < stageSequence.length - 1) {
+        return stageSequence[currentIndex + 1];
+      }
+
+      return null;
+    }
+
+    function addRequest(type, message, isError = false) {
+      const timestamp = formatTimestamp();
+      requests.unshift({ timestamp, type, message, isError });
+
+      // Keep only the latest maxRequests
+      if (requests.length > maxRequests) {
+        requests.pop();
+      }
+
+      updateRequestsLog();
+    }
+
+    // Generates a unique ID for each request to facilitate searching
+    function generateRequestId() {
+      requestCounter++;
+      return `req-${requestCounter.toString().padStart(4, '0')}`;
+    }
+
+    function addRequestFromTracker(request) {
+      try {
+        const requestId = request.id || generateRequestId();
+
+        console.log('New request received:', request.resource, 'from node:', request.node);
+
+        // Update stats
+        requestStats.total++;
+        if (request.success) {
+          requestStats.success++;
+        } else {
+          requestStats.failed++;
+        }
+        requestStats.nodes.add(request.node);
+
+        // Add to requests array
+        requests.unshift({
+          id: requestId,
+          timestamp: formatRequestTimestamp(request.timestamp),
+          type: request.success ? 'success' : 'error',
+          message: formatTrackedRequest(request),
+          isError: !request.success,
+          isTrackedRequest: true,
+          rawRequest: request
+        });
+
+        // Keep only the latest maxRequests
+        if (requests.length > maxRequests) {
+          requests.pop();
+        }
+
+        // Update UI
+        updateRequestsTable();
+
+        // Handle manifest
+        if (request.resource === 'earthfast.json' || request.resource === 'armada.json') {
+          updateManifestRequest(request, requestId);
+        }
+
+        // Update logs and stats
+        updateRequestsLog();
+        updateRequestStats();
+
+      } catch (error) {
+        console.error('Error processing request:', error);
+      }
+    }
+
+    // Update manifest request information
+    function updateManifestRequest(request, requestId) {
+      if (!stages['stage-manifest'].started) {
+        updateStageStatus('stage-manifest', 'running');
+      }
+
+      const nodeId = request.node;
+
+      // Register this node if it doesn't exist
+      if (!manifestNodes.nodes[nodeId]) {
+        manifestNodes.nodes[nodeId] = {
+          status: request.success ? 'success' : 'error',
+          statusCode: request.status || 0,
+          hash: null,
+          requestId: requestId
+        };
+        manifestNodes.total++;
+
+        if (request.success) {
+          manifestNodes.success++;
+        }
+      }
+
+      // Update the progress in the UI
+      const progressEl = document.getElementById('stage-manifest-progress');
+      progressEl.innerHTML = `<div class="stage-progress-text">${manifestNodes.success}/${manifestNodes.total} nodes</div>`;
+
+      // Update the manifest nodes list
+      updateManifestNodesList();
+
+      // If all nodes have responded, consider the stage complete
+      if (Object.keys(manifestNodes.nodes).length >= requestStats.nodes.size) {
+        if (manifestNodes.success > 0) {
+          updateStageStatus('stage-manifest', 'success');
+
+          // Start the next resource loading stage
+          updateStageStatus('stage-resources', 'running');
+        } else {
+          updateStageStatus(
+            'stage-manifest', 'error',
+            '<p>Failed to reach consensus on manifest from content nodes.</p>');
+        }
+      }
+    }
+
+    // Update the list of nodes that provided the manifest
+    function updateManifestNodesList() {
+      const listEl = document.getElementById('manifest-nodes-list');
+      listEl.innerHTML = '';
+
+      Object.entries(manifestNodes.nodes).forEach(([nodeId, data]) => {
+        const li = document.createElement('li');
+        li.className = 'manifest-item';
+
+        const statusClass = data.status === 'success' ? 'status-ok' : 'status-error';
+        const statusText = data.status === 'success' ? 'OK' : 'Failed';
+
+        li.innerHTML = `
+            <span class="manifest-node">${nodeId}</span>
+            <span class="manifest-status ${statusClass}">${statusText}</span>
+            <span class="request-id">${data.requestId}</span>
+            ${data.hash ? `<span class="manifest-hash">${data.hash}</span>` : ''}
+          `;
+
+        listEl.appendChild(li);
+      });
+
+      // Update heights after modifying content
+      updateExpandedSectionHeights();
+    }
+
+    // Update the resource request table
+    function updateRequestsTable() {
+      const tableBody = document.getElementById('requests-table-body');
+
+      // Clear table
+      tableBody.innerHTML = '';
+
+      // Filter requests for the table
+      // Include all requests except manifest and nodes
+      const resourceRequests = requests.filter(
+        req => req.isTrackedRequest && req.rawRequest && req.rawRequest.resource !== 'nodes');
+
+      console.log('Updating request table:', resourceRequests.length, 'requests found');
+
+      // If no requests, show message
+      if (resourceRequests.length === 0) {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+            <td colspan="5" style="text-align: center; padding: 20px;">
+              No requests detected yet.
+              Requests will appear automatically when made.
+            </td>
+          `;
+        tableBody.appendChild(tr);
+
+        // Update expanded section heights
+        updateExpandedSectionHeights();
+        return;
+      }
+
+      // Limit to the 50 most recent requests
+      const limitedRequests = resourceRequests.slice(0, 50);
+
+      // Add rows to the table
+      limitedRequests.forEach(req => {
+        const tr = document.createElement('tr');
+        const request = req.rawRequest;
+
+        // Generate ID if it doesn't exist
+        if (!req.id) {
+          req.id = generateRequestId();
+        }
+
+        const statusClass = request.success ? 'status-ok' : 'status-error';
+        const statusText = request.status ? request.status : (request.success ? 'OK' : 'Failed');
+
+        console.log('Adding request to table:', request.resource, 'from node:', request.node);
+
+        tr.innerHTML = `
+            <td><span class="request-id">${req.id}</span></td>
+            <td>${req.timestamp}</td>
+            <td><span class="resource-info">${request.resource || 'unknown'}</span></td>
+            <td><span class="node-info">${request.node}</span></td>
+            <td><span class="request-status ${statusClass}">${statusText}</span></td>
+          `;
+
+        tableBody.appendChild(tr);
+      });
+
+      // Update expanded section heights after adding new content
+      updateExpandedSectionHeights();
+
+      // If there are enough successful requests, consider the stage complete
+      const successfulRequests =
+        resourceRequests.filter(req => req.rawRequest && req.rawRequest.success);
+      if (successfulRequests.length >= 5 && !stages['stage-ready'].started) {
+        updateStageStatus('stage-resources', 'success');
+        updateStageStatus('stage-ready', 'running');
+
+        // Show button to continue
+        document.getElementById('stage-ready-button').style.display = 'block';
+
+        // Connect event to new button
+        document.getElementById('stage-ready-button').addEventListener('click', () => {
+          readyToLoad = true;
+          location.reload();
+        });
+      }
+    }
+
+    // Add a function to update heights of all expanded sections
+    function updateExpandedSectionHeights() {
+      // Find all expanded sections and update their heights
+      document.querySelectorAll('.stage.expanded').forEach(stage => {
+        const content = stage.querySelector('.stage-content');
+        if (content) {
+          content.style.height = 'auto';
+        }
+      });
+    }
+
+    function formatTrackedRequest(request) {
+      let statusClass = request.success ? 'status-ok' : 'status-error';
+      let statusText = request.status ? request.status : (request.success ? 'OK' : 'Failed');
+
+      return `<div class="request-details">
+                  <span>
+                    <span class="node-info">${request.node}</span> ›
+                    <span class="resource-info">${request.resource || 'unknown'}</span>
+                  </span>
+                  <span class="request-status ${statusClass}">${statusText}</span>
+                </div>`;
+    }
+
+    function updateRequestStats() {
+      if (!requestsStats) return;
+      requestsStats.innerHTML = `
+          <div>Total: ${requestStats.total} | Success: ${requestStats.success} | Failed: ${requestStats.failed} | Nodes: ${requestStats.nodes.size}</div>
+        `;
+    }
+
+    function updateRequestsLog() {
+      if (!requestsLog) return;
+      requestsLog.innerHTML = '';
+
+      requests.forEach(req => {
+        const item = document.createElement('div');
+        item.classList.add('request-item');
+        if (req.isError) {
+          item.classList.add('error');
+        } else if (req.type === 'success') {
+          item.classList.add('success');
+        }
+
+        const timestamp = document.createElement('span');
+        timestamp.classList.add('timestamp');
+        timestamp.textContent = req.timestamp;
+
+        item.appendChild(timestamp);
+
+        // For tracked requests, use innerHTML to include the formatted HTML
+        if (req.isTrackedRequest) {
+          const contentSpan = document.createElement('span');
+          contentSpan.innerHTML = req.message;
+          item.appendChild(contentSpan);
+        } else {
+          item.appendChild(document.createTextNode(`[${req.type}] ${req.message}`));
+        }
+
+        requestsLog.appendChild(item);
+      });
+    }
 
     function fail(message) {
       console.error(message);
-      document.body.classList.remove('hidden'); // show body content so error message is visible
+      document.body.classList.remove('hidden');  // show body content so error message is visible
       document.getElementById('spinner').classList.add('hidden');
-      document.getElementById('description-text').innerHTML = '<span style="color: #FF4D4D; margin-right: 5px;">&#x2716;</span>Failed to load';
+      document.getElementById('description-text').innerHTML =
+        '<span style="color: #FF4D4D; margin-right: 5px;">&#x2716;</span>Failed to load';
+      addRequest('error', message, true);
+
+      // Update stage states
+      updateStageStatus(
+        'stage-sw-register', 'error', `<p>Service worker registration failed: ${message}</p>`);
     }
 
-    const reloadAfterWallTime = function (initDate) {
+    function failNoViewer(message) {
+      console.error(message);
+      document.body.classList.remove('hidden');  // show body content so error message is visible
+      document.getElementById('spinner').classList.add('hidden');
+      document.getElementById('description-text').innerHTML =
+        '<span style="color: #FF4D4D; margin-right: 5px;">&#x2716;</span>Failed to load';
+    }
+
+    const reloadAfterWallTimeNoViewer = function (initDate) {
       return function (delayMs) {
         const msSinceInit = Date.now() - initDate;
         const timeout = Math.max(0, delayMs - msSinceInit);
@@ -43,94 +592,396 @@
           location.reload();
           console.log(`Total load time: ${Date.now() - initDate}ms`);
         }, timeout);
-      }
+      };
     }(Date.now());
+
+    const reloadAfterWallTime = function (initDate) {
+      return function (delayMs) {
+        const msSinceInit = Date.now() - initDate;
+        const timeout = Math.max(0, delayMs - msSinceInit);
+        console.log(`Timeout: ${timeout}ms`);
+
+        if (readyToLoad && !hasRedirected) {
+          setTimeout(() => {
+            hasRedirected = true;
+            // Remove the secure_viewer parameter from the URL
+            const url = new URL(window.location.href);
+            url.searchParams.delete('secure_viewer');
+            window.location.href = url.toString();
+          }, timeout);
+        } else {
+          if (!stages['stage-manifest'].started) {
+            updateStageStatus('stage-manifest', 'running');
+          }
+
+          if (!stages['stage-ready'].started) {
+            updateStageStatus('stage-ready', 'running');
+            updateStageStatus('stage-ready', 'success');
+          }
+        }
+      };
+    }(Date.now());
+
+    // Handler for stage-ready button (new)
+    stageReadyButton.addEventListener('click', () => {
+      readyToLoad = true;
+      location.reload();
+    });
 
     window.addEventListener('load', () => {
       document.getElementById('domain').innerText = location.host;
+      document.body.classList.remove('hidden');
+      const stagesContainer = document.getElementById('stages-container');
 
-      if (!('serviceWorker' in navigator)) {
-        document.cookie = "supportsSW=false; path=/";
-        console.log("supportsSW=false");
-        // reload the page with the cookie set
-        // this will get sent to the server which loads the page through proxy
-        window.location.reload();
-        return;
-      }
+      // Add event listeners for stage headers
+      document.querySelectorAll('.stage-toggle-header').forEach(header => {
+        header.addEventListener('click', () => {
+          const stage = header.closest('.stage');
+          stage.classList.toggle('expanded');
 
-      // listen for messages from the service worker
-      navigator.serviceWorker.addEventListener('message', event => {
-        const eventType = event.data.type ? event.data.type : event.data.action;
-        console.log(`New service worker message received '${eventType}'`, event);
-
-        switch (eventType) {
-          // service worker is initialized
-          case 'INITIALIZED':
-            console.log('INITIALIZED');
-            reloadAfterWallTime(0);
-            break;
-
-          // a new service worker version has been detected
-          case 'VERSION_DETECTED': console.log('VERSION_DETECTED'); break;
-
-          // a new service worker version is ready to be applied
-          case 'VERSION_READY': console.log('VERSION_READY'); break;
-
-          // the content checksum from the manifest doesn't match the hash of the fetched content
-          case 'CONTENT_CHECKSUM_MISMATCH': console.log('CONTENT_CHECKSUM_MISMATCH'); break;
-
-          // a single content node failed to retrieve content
-          case 'CONTENT_NODE_FETCH_FAILURE': console.log('CONTENT_NODE_FETCH_FAILURE'); break;
-
-          // all available content nodes failed to retrieve content
-          case 'CONTENT_NODES_FETCH_FAILURE': console.log('CONTENT_NODES_FETCH_FAILURE'); break;
-        }
+          // When expanding a stage, automatically adjust its height
+          const content = stage.querySelector('.stage-content');
+          if (stage.classList.contains('expanded')) {
+            content.style.height = 'auto';
+          } else {
+            content.style.height = '0';
+          }
+        });
       });
 
-      navigator.serviceWorker.register(serviceWorker, { scope: '/' })
-        .then(reg => {
-          console.log('Service Worker registration successful with scope: ', reg.scope);
+      // Show the stages container if we are in secure viewer
+      if (isSecureViewer) {
+        if (stagesContainer) {
+          stagesContainer.style.display = 'block';
+        }
 
-          if (reg.installing) {
-            console.log('Service Worker installing');
-          } else if (reg.waiting) {
-            console.log('Service Worker installed');
-          } else if (reg.active) {
-            console.log('Service Worker active');
+        // Show the dev tools notice and button
+        const devToolsNotice = document.getElementById('dev-tools-notice');
+        const startLoadingButton = document.getElementById('start-loading-button');
+        devToolsNotice.classList.add('show');
+        startLoadingButton.style.display = 'block';
+
+        // Hide the spinner initially in secure mode
+        document.getElementById('spinner').style.display = 'none';
+
+        // Function to initialize service worker
+        const initializeServiceWorker = () => {
+          // Show spinner once loading starts
+          document.getElementById('spinner').style.display = 'block';
+
+          // Start directly with manifest stage
+          updateStageStatus('stage-manifest', 'running');
+
+          if (!('serviceWorker' in navigator)) {
+            document.cookie = 'supportsSW=false; path=/';
+            console.log('supportsSW=false');
+            addRequest('error', 'Service worker not supported by this browser', true);
+            // reload the page with the cookie set
+            // this will get sent to the server which loads the page through proxy
+            window.location.reload();
+            return;
           }
 
-          // A scenario exists where this landing page is being served and executed even though the
-          // service worker is already installed and active. It can occur, for instance, if a user
-          // does a hard refresh in their browser after the service worker has been installed.
-          //
-          // In this case we'll never get an INITIALIZED message, so a reload needs to be triggered
-          // manually. Since the service worker is active, we know the onFetch handler is installed
-          // and will be responsible for serving the reload request.
-          
-          // if the service worker exists but the page was hard refreshe
-          if (reg.active) {
-            console.log('Active service worker found, reloading page');
-            reloadAfterWallTime(0);
-          } else {
-            // first time loading the page, show loading spinner
-            if (showSpinner) {
-              document.body.classList.remove('hidden');
-            }
-            reg.addEventListener('updatefound', () => {
-              const newWorker = reg.installing;
-              newWorker.addEventListener('statechange', () => {
-                if (newWorker.state === 'activated') {
-                  console.log('Service Worker activated, reloading page');
-                  reloadAfterWallTime(500);
+          // listen for messages from the service worker
+          navigator.serviceWorker.addEventListener('message', event => {
+            const eventType = event.data.type ? event.data.type : event.data.action;
+            console.log(`New service worker message received '${eventType}'`, event);
+
+            let error = event.data.error || '';
+
+            switch (eventType) {
+              // service worker is initialized
+              case 'INITIALIZED':
+                console.log('INITIALIZED', event.data);
+
+                // Instead of showing registration and initialization phases, we focus on the manifest
+                // Show node information if available
+                if (event.data.nodes && event.data.nodes.length > 0) {
+                  // Update manifest progress with available nodes
+                  const progressEl = document.getElementById('stage-manifest-progress');
+                  progressEl.innerHTML =
+                    `<div class="stage-progress-text">0/${event.data.nodes.length} nodes</div>`;
+
+                  // Update content with available nodes
+                  const nodesListHtml = event.data.nodes
+                    .map(node => `<li class="manifest-item">
+                      <span class="manifest-node">${node}</span>
+                      <span class="manifest-status status-pending">Pending</span>
+                    </li>`).join('');
+
+                  document.getElementById('manifest-nodes-list').innerHTML = nodesListHtml;
                 }
-              });
+
+                // Request all tracked requests from the service worker
+                if (navigator.serviceWorker.controller) {
+                  navigator.serviceWorker.controller.postMessage({ type: 'GET_ALL_REQUESTS' });
+                }
+
+                reloadAfterWallTime(0);
+                break;
+
+              // a new service worker version has been detected
+              case 'VERSION_DETECTED':
+                console.log('VERSION_DETECTED');
+                addRequest('info', 'New service worker version detected');
+                break;
+
+              // a new service worker version is ready to be applied
+              case 'VERSION_READY':
+                console.log('VERSION_READY');
+                addRequest('info', 'New service worker version ready to be applied');
+                break;
+
+              // Error fetching manifest
+              case 'MANIFEST_FETCH_ERROR':
+                console.log('MANIFEST_FETCH_ERROR', error);
+                addRequest('error', `Error fetching manifest: ${error}`, true);
+                break;
+
+              // No consensus on manifest content
+              case 'MANIFEST_FETCH_FAILURE_NO_CONSENSUS':
+                console.log('MANIFEST_FETCH_FAILURE_NO_CONSENSUS', error);
+                addRequest('error', `No consensus on manifest: ${error}`, true);
+
+                // Update manifest stage
+                updateStageStatus(
+                  'stage-manifest', 'error', `<p>No consensus on manifest: ${error}</p>`);
+                break;
+
+              // the content checksum from the manifest doesn't match the hash of the fetched content
+              case 'CONTENT_CHECKSUM_MISMATCH':
+                console.log('CONTENT_CHECKSUM_MISMATCH', error);
+                addRequest('error', `Content checksum mismatch: ${error}`, true);
+                break;
+
+              // a single content node failed to retrieve content
+              case 'CONTENT_NODE_FETCH_FAILURE':
+                console.log('CONTENT_NODE_FETCH_FAILURE', error);
+                addRequest('error', `Failed to fetch from content node: ${error}`, true);
+                break;
+
+              // all available content nodes failed to retrieve content
+              case 'CONTENT_NODES_FETCH_FAILURE':
+                console.log('CONTENT_NODES_FETCH_FAILURE', error);
+                addRequest('error', `All content nodes failed: ${error}`, true);
+
+                // Update resources stage
+                if (stages['stage-resources'].started && !stages['stage-resources'].completed) {
+                  updateStageStatus(
+                    'stage-resources', 'error', `<p>All content nodes failed: ${error}</p>`);
+                }
+                break;
+
+              // A single tracked request
+              case 'REQUEST_TRACKED':
+                console.log(
+                  'REQUEST_TRACKED received:', event.data.request.resource,
+                  'from node:', event.data.request.node);
+
+                // Add request to log and ensure it shows in table
+                addRequestFromTracker(event.data.request);
+
+                // Ensure resources stage is started
+                if (!stages['stage-resources'].started) {
+                  updateStageStatus('stage-resources', 'running');
+                }
+
+                // Force table update
+                updateRequestsTable();
+                break;
+
+              // All requests at once
+              case 'ALL_REQUESTS':
+                console.log('ALL_REQUESTS received:', event.data.requests.length, 'requests');
+
+                // Clear existing tracked requests
+                requests = requests.filter(req => !req.isTrackedRequest);
+
+                // Process requests using our helper function
+                processRequestsData(event.data.requests);
+                break;
+
+              // Requests cleared
+              case 'REQUESTS_CLEARED':
+                console.log('REQUESTS_CLEARED');
+                // Clear existing tracked requests
+                requests.forEach((req, index) => {
+                  if (req.isTrackedRequest) {
+                    requests.splice(index, 1);
+                  }
+                });
+                updateRequestsLog();
+                break;
+
+              default:
+                if (event.data.error) {
+                  addRequest(
+                    'unknown', `Unknown event: ${eventType} - Error: ${event.data.error}`, true);
+                } else {
+                  addRequest('unknown', `Unknown event: ${eventType}`);
+                }
+            }
+          });
+
+          navigator.serviceWorker.register(serviceWorker, { scope: '/' })
+            .then(reg => {
+              console.log('Service Worker registration successful with scope: ', reg.scope);
+
+              // Request all tracked requests from the service worker
+              if (reg.active && navigator.serviceWorker.controller) {
+                navigator.serviceWorker.controller.postMessage({ type: 'GET_ALL_REQUESTS' });
+
+                // When service worker is already active
+                console.log('Active service worker found, waiting for initialization');
+                reloadAfterWallTime(0);
+              } else {
+                // If in installation process
+                if (showSpinner) {
+                  document.body.classList.remove('hidden');
+                }
+
+                reg.addEventListener('updatefound', () => {
+                  const newWorker = reg.installing;
+
+                  newWorker.addEventListener('statechange', () => {
+                    if (newWorker.state === 'activated') {
+                      console.log('Service Worker activated, ready to load content');
+                      reloadAfterWallTime(500);
+                    }
+                  });
+                });
+              }
+            })
+            .catch(err => {
+              fail('Service worker registration failed: ' + err);
             });
-          }
-        })
-        .catch(err => {
-          fail('Service worker registration failed: ' + err);
+        };
+
+        // Add click handler to the start loading button
+        startLoadingButton.addEventListener('click', () => {
+          // Hide the notice and button
+          devToolsNotice.classList.remove('show');
+          startLoadingButton.style.display = 'none';
+
+          // Initialize the service worker
+          initializeServiceWorker();
         });
+
+      } else {
+        if (stagesContainer) {
+          stagesContainer.style.display = 'none';
+        }
+        if (!('serviceWorker' in navigator)) {
+          document.cookie = 'supportsSW=false; path=/';
+          console.log('supportsSW=false');
+          // reload the page with the cookie set
+          // this will get sent to the server which loads the page through proxy
+          window.location.reload();
+          return;
+        }
+
+        // listen for messages from the service worker
+        navigator.serviceWorker.addEventListener('message', event => {
+          const eventType = event.data.type ? event.data.type : event.data.action;
+          console.log(`New service worker message received '${eventType}'`, event);
+
+          switch (eventType) {
+            // service worker is initialized
+            case 'INITIALIZED':
+              console.log('INITIALIZED');
+              reloadAfterWallTimeNoViewer(0);
+              break;
+
+            // a new service worker version has been detected
+            case 'VERSION_DETECTED':
+              console.log('VERSION_DETECTED');
+              break;
+
+            // a new service worker version is ready to be applied
+            case 'VERSION_READY':
+              console.log('VERSION_READY');
+              break;
+
+            // the content checksum from the manifest doesn't match the hash of the fetched content
+            case 'CONTENT_CHECKSUM_MISMATCH':
+              console.log('CONTENT_CHECKSUM_MISMATCH');
+              break;
+
+            // a single content node failed to retrieve content
+            case 'CONTENT_NODE_FETCH_FAILURE':
+              console.log('CONTENT_NODE_FETCH_FAILURE');
+              break;
+
+            // all available content nodes failed to retrieve content
+            case 'CONTENT_NODES_FETCH_FAILURE':
+              console.log('CONTENT_NODES_FETCH_FAILURE');
+              break;
+          }
+        });
+
+        navigator.serviceWorker.register(serviceWorker, { scope: '/' })
+          .then(reg => {
+            console.log('Service Worker registration successful with scope: ', reg.scope);
+
+            if (reg.installing) {
+              console.log('Service Worker installing');
+            } else if (reg.waiting) {
+              console.log('Service Worker installed');
+            } else if (reg.active) {
+              console.log('Service Worker active');
+            }
+
+            // A scenario exists where this landing page is being served and executed even though the
+            // service worker is already installed and active. It can occur, for instance, if a user
+            // does a hard refresh in their browser after the service worker has been installed.
+            //
+            // In this case we'll never get an INITIALIZED message, so a reload needs to be triggered
+            // manually. Since the service worker is active, we know the onFetch handler is installed
+            // and will be responsible for serving the reload request.
+
+            // if the service worker exists but the page was hard refreshe
+            if (reg.active) {
+              console.log('Active service worker found, reloading page');
+              reloadAfterWallTimeNoViewer(0);
+            } else {
+              // first time loading the page, show loading spinner
+              if (showSpinner) {
+                document.body.classList.remove('hidden');
+              }
+              reg.addEventListener('updatefound', () => {
+                const newWorker = reg.installing;
+                newWorker.addEventListener('statechange', () => {
+                  if (newWorker.state === 'activated') {
+                    console.log('Service Worker activated, reloading page');
+                    reloadAfterWallTimeNoViewer(500);
+                  }
+                });
+              });
+            }
+          })
+          .catch(err => {
+            failNoViewer('Service worker registration failed: ' + err);
+          });
+      }
     });
+
+    // Add all requests in reverse order (newest first)
+    const processRequestsData = (requests) => {
+      const sortedRequests = [...requests].sort((a, b) => b.timestamp - a.timestamp);
+
+      sortedRequests.forEach(request => {
+        addRequestFromTracker(request);
+      });
+
+      // Explicitly start resources stage if there are requests
+      if (sortedRequests.length > 0 && !stages['stage-resources'].started) {
+        updateStageStatus('stage-resources', 'running');
+      }
+
+      // Force table update
+      updateRequestsTable();
+      return sortedRequests;
+    };
 
   </script>
 </body>
