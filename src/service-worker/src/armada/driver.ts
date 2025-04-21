@@ -404,8 +404,13 @@ export class ArmadaDriver extends Driver {
       }
       
       this.debugger.log(`Preloaded ${allAssets.length} assets successfully`);
+      
+      // Notify clients that preloading is complete
+      await this.broadcast({type: 'PRELOADING_COMPLETE', assetCount: allAssets.length});
     } catch (err) {
       this.debugger.log(err as Error, 'Error in preloadSiteAssets');
+      // Notify clients even if there was an error
+      await this.broadcast({type: 'PRELOADING_ERROR', error: err.toString()});
     }
   }
 

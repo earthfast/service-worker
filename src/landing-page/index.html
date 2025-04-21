@@ -114,9 +114,6 @@
                 </tbody>
               </table>
             </div>
-            <div class="stage-progress" id="stage-resources-progress">
-              <div class="stage-progress-text">0/0 resources</div>
-            </div>
           </div>
         </div>
       </div>
@@ -133,8 +130,7 @@
         </div>
         <div class="stage-content">
           <div id="stage-ready-content">
-            <p>All resources loaded successfully. The website is ready to view.</p>
-            <button id="stage-ready-button" class="continue-button">Continue to website</button>
+            <button id="stage-ready-button" disabled class="continue-button">Continue to website</button>
           </div>
         </div>
       </div>
@@ -183,6 +179,8 @@
       'stage-resources': { started: false, completed: false, startTime: null, endTime: null },
       'stage-ready': { started: false, completed: false, startTime: null, endTime: null }
     };
+
+    let preloadingComplete = false;
 
     function formatTimestamp() {
       const now = new Date();
@@ -814,6 +812,19 @@
                   }
                 });
                 updateRequestsLog();
+                break;
+
+              case 'PRELOADING_COMPLETE':
+                console.log("preloading complete")
+                console.log('PRELOADING_COMPLETE', event.data.assetCount);
+                preloadingComplete = true;
+                updateStageStatuses();
+                break;
+
+              case 'PRELOADING_ERROR':
+                console.log('PRELOADING_ERROR', event.data.error);
+                preloadingComplete = true;
+                updateStageStatuses();
                 break;
 
               default:
