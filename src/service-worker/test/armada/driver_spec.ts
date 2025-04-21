@@ -1,12 +1,12 @@
 import {webcrypto} from 'crypto';
 
+import {computeCidV1} from '../../src/armada/cid';
 import {ArmadaDriver} from '../../src/armada/driver';
 import {CacheDatabase} from '../../src/db-cache';
 import {Manifest} from '../../src/manifest';
 import {MockRequest, MockResponse} from '../../testing/armada/fetch';
 import {StaticNodeRegistry} from '../../testing/armada/registry';
 import {SwTestHarnessBuilder} from '../../testing/armada/scope';
-import {sha256} from '../../testing/armada/sha256';
 import {MockFetchEvent} from '../../testing/events';
 
 class SiteBundle {
@@ -37,10 +37,12 @@ class SiteBundle {
     this.buildManifest();
   }
 
-  public buildManifest(): void {
+  public async buildManifest(): Promise<void> {
     const hashTable: {[url: string]: string} = {};
     for (const [url, body] of this.resources.entries()) {
-      hashTable[url] = sha256(body);
+      const encoder = new TextEncoder();
+      const buffer = encoder.encode(body).buffer;
+      hashTable[url] = await computeCidV1(buffer);
     }
 
     this._manifest = {
