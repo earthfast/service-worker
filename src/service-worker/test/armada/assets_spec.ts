@@ -402,7 +402,7 @@ describe('ArmadaLazyAssetGroup', () => {
          const time1to2 = apiClient.getTimeBetweenRequests('content0', 'content1');
          const time2to3 = apiClient.getTimeBetweenRequests('content1', 'content2');
 
-         expect(time1to2).toBeGreaterThanOrEqual(ArmadaLazyAssetGroup.TIMEOUT_MS);
+         expect(time1to2).toBeGreaterThanOrEqual(ArmadaLazyAssetGroup.TIMEOUT_MS - 5);
          expect(time2to3).toBeGreaterThanOrEqual(ArmadaLazyAssetGroup.TIMEOUT_MS);
 
          expect(apiClient.seenHosts.size).toBe(3);

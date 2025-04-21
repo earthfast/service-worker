@@ -427,12 +427,12 @@ export async function cidHashTableForFs(
     if (file.hashThisFile) {
       const encoder = new TextEncoder();
 
+      // Create explicitly broken CIDs for files that should fail verification
       if (file.brokenHash || breakHashes[filePath]) {
-        // For test cases with broken files, create an intentionally incorrect CID
-        // This makes the 'broken' file content validation fail correctly
-        const alternateContent = 'INTENTIONALLY WRONG CONTENT';
-        const altBuffer = encoder.encode(alternateContent).buffer;
-        table[urlPath] = await computeCidV1(altBuffer);
+        // Generate completely different content for broken files
+        const wrongContent = 'THIS CONTENT WILL GENERATE A DIFFERENT CID';
+        const wrongBuffer = encoder.encode(wrongContent).buffer;
+        table[urlPath] = await computeCidV1(wrongBuffer);
       } else {
         const buffer = encoder.encode(file.contents).buffer;
         table[urlPath] = await computeCidV1(buffer);
