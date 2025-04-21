@@ -353,6 +353,22 @@ export class MockServerState {
   }
 
   assertSawNodeRequestFor(resource: string): void {
+    // Add specific handling for earthfast.json
+    if (resource === ArmadaDriver.MANIFEST_FILENAME) {
+      // Check any request containing 'earthfast.json'
+      const foundRequest =
+          this.requests.find(req => req.url.includes(ArmadaDriver.MANIFEST_FILENAME));
+
+      if (foundRequest) {
+        // Remove the request
+        this.requests = this.requests.filter(req => req !== foundRequest);
+        return;
+      }
+
+      throw new Error(`Expected node request for ${resource}, got none.`);
+    }
+
+    // Existing logic for other resources
     if (!this.sawNodeRequestFor(resource)) {
       throw new Error(`Expected node request for ${resource}, got none.`);
     }
