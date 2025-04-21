@@ -67,37 +67,28 @@ const distAltPort = distAltPortBuilder.build();
 
 const brokenFs = new MockFileSystemBuilder()
                      .addFile(
-                         '/foo.txt', 'this is foo (broken)', {}, undefined, undefined,
-                         true)  // Add brokenHash flag
+                         '/foo.txt', 'this is foo (broken)', {}, undefined, '',
+                         true)  // Set brokenHash flag to true
                      .addFile(
-                         '/bar.txt', 'this is bar (broken)', {}, undefined, undefined,
-                         true)  // Add brokenHash flag
+                         '/bar.txt', 'this is bar (broken)', {}, undefined, '',
+                         true)  // Set brokenHash flag to true
                      .build();
 
 // Setup function to create manifests with CID hash tables
 async function createManifest(
-    fs: MockFileSystem, baseConfig: Partial<Manifest> = {}): Promise<Manifest> {
+    fs: MockFileSystem, config: Partial<Manifest> = {}): Promise<Manifest> {
   const hashTable = await cidHashTableForFs(fs);
 
+  // Create the manifest
   return {
     configVersion: 1,
-    timestamp: 1234567890123,
-    index: '/foo.txt',
-    assetGroups: [{
-      name: 'assets',
-      installMode: 'prefetch',
-      updateMode: 'prefetch',
-      urls: [
-        '/foo.txt',
-      ],
-      patterns: [],
-      cacheQueryOptions: {ignoreVary: true},
-    }],
-    dataGroups: [],
-    navigationUrls: processNavigationUrls(''),
+    timestamp: Date.now(),
+    index: '/index.html',
+    assetGroups: [],
+    navigationUrls: [],
     navigationRequestStrategy: 'performance',
     hashTable,
-    ...baseConfig
+    ...config
   };
 }
 

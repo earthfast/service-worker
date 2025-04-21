@@ -31,8 +31,15 @@ export class MockFile {
 
   async getCid(): Promise<string> {
     const encoder = new TextEncoder();
-    const buffer = encoder.encode(this.contents).buffer;
-    return computeCidV1(buffer);
+    if (this.brokenHash) {
+      // For broken hashes, create intentionally different content
+      const altContent = 'INTENTIONALLY WRONG CONTENT';
+      const buffer = encoder.encode(altContent).buffer;
+      return computeCidV1(buffer);
+    } else {
+      const buffer = encoder.encode(this.contents).buffer;
+      return computeCidV1(buffer);
+    }
   }
 
   get randomHash(): string {
