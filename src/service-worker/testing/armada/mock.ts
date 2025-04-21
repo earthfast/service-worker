@@ -298,15 +298,27 @@ export class MockServerState {
   }
 
   sawRequestFor(url: string): boolean {
-    // look for content requests
-    let matching = this.matchResource(url);
-    if (matching.length > 0) {
-      this.requests = this.requests.filter(req => req !== matching[0]);
-      return true;
+    // First, look for an exact match
+    let matching = this.requests.filter(req => req.url.split('?')[0] === url);
+
+    // If no match, check for navigation requests
+    if (matching.length === 0 && url.startsWith('/')) {
+      matching = this.requests.filter(req => {
+        // Check if this is a navigation request
+        if (req.mode === 'navigate') {
+          const parsedUrl = new URL(req.url);
+          return parsedUrl.pathname === url;
+        }
+        return false;
+      });
     }
 
-    // node or legacy requests
-    matching = this.requests.filter(req => req.url.split('?')[0] === url);
+    // If still no match, look for content requests
+    if (matching.length === 0) {
+      matching = this.matchResource(url);
+    }
+
+    // Remove matched request and return true if found
     if (matching.length > 0) {
       this.requests = this.requests.filter(req => req !== matching[0]);
       return true;

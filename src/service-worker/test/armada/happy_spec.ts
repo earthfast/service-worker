@@ -24,6 +24,7 @@ import {breakContentHashes, cidHashTableForFs, createBrokenFs, MockFileSystem, M
 import {SwTestHarness, SwTestHarnessBuilder} from '../../testing/armada/scope';
 import {MockCache} from '../../testing/cache';
 import {MockWindowClient} from '../../testing/clients';
+import {MockFetchEvent} from '../../testing/events';
 import {MockRequest, MockResponse} from '../../testing/fetch';
 import {envIsSupported, processNavigationUrls, TEST_BOOTSTRAP_NODE, TEST_CONTENT_NODES_PORTS, TEST_PROJECT_ID} from '../../testing/utils';
 
@@ -1764,22 +1765,32 @@ async function makeRequest(
 
 function makeNavigationRequest(
     scope: SwTestHarness, url: string, clientId?: string, init: Object = {}): Promise<string|null> {
-  const requestInit = {
+  // Create a navigation request with proper headers
+  const request = new MockRequest(url, {
     headers: {
       Accept: 'text/plain, text/html, text/css',
       ...(init as any).headers,
     },
     mode: 'navigate',
     ...init,
-  };
+  });
 
-  // For testing purposes, we need to handle empty clientId
-  const effectiveClientId = clientId || 'default';
+  // Use this for debugging
+  console.log(`Navigation request: ${url}, client: ${clientId || 'default'}`);
 
-  // Use this to debug if needed
-  console.log(`Navigation request: ${url}, client: ${effectiveClientId}`);
+  // Handle the navigation request through the fetch event
+  const [resPromise, done] = scope.handleFetch(
+      new MockFetchEvent(request, clientId || 'default', clientId || 'default'),
+      clientId || 'default');
 
-  return makeRequest(scope, url, effectiveClientId, requestInit);
+  // Process the response
+  return done.then(async () => {
+    const res = await resPromise;
+    if (!res || !res.ok) {
+      return null;
+    }
+    return res.text();
+  });
 }
 
 async function removeAssetFromCache(
