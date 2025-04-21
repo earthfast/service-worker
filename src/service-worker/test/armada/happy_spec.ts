@@ -13,6 +13,8 @@ import 'isomorphic-fetch';
 
 import {webcrypto} from 'crypto';
 
+const subtleCrypto = webcrypto.subtle as unknown as SubtleCrypto;
+
 import {ArmadaAPIClientImpl} from '../../src/armada/api';
 import {computeCidV1} from '../../src/armada/cid';
 import {ArmadaDriver, ArmadaDriver as Driver} from '../../src/armada/driver';
@@ -301,8 +303,7 @@ describe('Driver', () => {
     scope = new SwTestHarnessBuilder().withServerState(server).build();
     const apiClient = new ArmadaAPIClientImpl(scope, scope, 'http:', TEST_PROJECT_ID);
     const registry = new DynamicNodeRegistry(apiClient, [TEST_BOOTSTRAP_NODE], 10000);
-    driver =
-        new Driver(scope, scope, new CacheDatabase(scope), registry, apiClient, webcrypto.subtle);
+    driver = new Driver(scope, scope, new CacheDatabase(scope), registry, apiClient, subtleCrypto);
   });
 
   it('activates without waiting', async () => {
@@ -561,8 +562,7 @@ describe('Driver', () => {
                 .build();
     const apiClient = new ArmadaAPIClientImpl(scope, scope, 'http:', TEST_PROJECT_ID);
     const registry = new DynamicNodeRegistry(apiClient, [TEST_BOOTSTRAP_NODE], 10000);
-    driver =
-        new Driver(scope, scope, new CacheDatabase(scope), registry, apiClient, webcrypto.subtle);
+    driver = new Driver(scope, scope, new CacheDatabase(scope), registry, apiClient, subtleCrypto);
     expect(await makeRequest(scope, '/foo.txt')).toEqual('this is foo');
     await driver.initialized;
     serverUpdate.assertNoOtherRequests();
@@ -620,8 +620,7 @@ describe('Driver', () => {
                 .build();
     const apiClient = new ArmadaAPIClientImpl(scope, scope, 'http:', TEST_PROJECT_ID);
     const registry = new DynamicNodeRegistry(apiClient, [TEST_BOOTSTRAP_NODE], 10000);
-    driver =
-        new Driver(scope, scope, new CacheDatabase(scope), registry, apiClient, webcrypto.subtle);
+    driver = new Driver(scope, scope, new CacheDatabase(scope), registry, apiClient, subtleCrypto);
 
     expect(await makeRequest(scope, '/foo.txt')).toEqual('this is foo');
     expect(await makeRequest(scope, '/foo.txt', 'new')).toEqual('this is foo v2');
@@ -679,8 +678,7 @@ describe('Driver', () => {
                 .build();
     const apiClient = new ArmadaAPIClientImpl(scope, scope, 'http:', TEST_PROJECT_ID);
     const registry = new DynamicNodeRegistry(apiClient, [TEST_BOOTSTRAP_NODE], 10000);
-    driver =
-        new Driver(scope, scope, new CacheDatabase(scope), registry, apiClient, webcrypto.subtle);
+    driver = new Driver(scope, scope, new CacheDatabase(scope), registry, apiClient, subtleCrypto);
     expect(await makeRequest(scope, '/foo.txt')).toEqual('this is foo');
     await driver.initialized;
     serverUpdate.assertNoOtherRequests();
@@ -695,8 +693,7 @@ describe('Driver', () => {
     await driver.idle.empty;
     serverUpdate.clearRequests();
 
-    driver =
-        new Driver(scope, scope, new CacheDatabase(scope), registry, apiClient, webcrypto.subtle);
+    driver = new Driver(scope, scope, new CacheDatabase(scope), registry, apiClient, subtleCrypto);
     expect(await makeRequest(scope, '/foo.txt')).toEqual('this is foo v2');
 
     keys = await scope.caches.keys();
@@ -725,8 +722,7 @@ describe('Driver', () => {
     scope.caches.delete('db:control');
     const apiClient = new ArmadaAPIClientImpl(scope, scope, 'http:', TEST_PROJECT_ID);
     const registry = new DynamicNodeRegistry(apiClient, [TEST_BOOTSTRAP_NODE], 10000);
-    driver =
-        new Driver(scope, scope, new CacheDatabase(scope), registry, apiClient, webcrypto.subtle);
+    driver = new Driver(scope, scope, new CacheDatabase(scope), registry, apiClient, subtleCrypto);
 
     expect(await makeRequest(scope, '/foo.txt')).toBe('this is foo v2');
     await driver.initialized;
@@ -1185,7 +1181,7 @@ describe('Driver', () => {
       const apiClient = new ArmadaAPIClientImpl(newScope, newScope, 'http:', TEST_PROJECT_ID);
       const registry = new DynamicNodeRegistry(apiClient, [TEST_BOOTSTRAP_NODE], 10000);
       new Driver(
-          newScope, newScope, new CacheDatabase(newScope), registry, apiClient, webcrypto.subtle);
+          newScope, newScope, new CacheDatabase(newScope), registry, apiClient, subtleCrypto);
 
       expect(await makeRequest(newScope, '/foo/bar/ngsw/state'))
           .toMatch(/^NGSW Debug Info:\n\nDriver version: .+\nDriver state: NORMAL/);
@@ -1263,7 +1259,7 @@ describe('Driver', () => {
       const apiClient = new ArmadaAPIClientImpl(newScope, newScope, 'http:', TEST_PROJECT_ID);
       const registry = new DynamicNodeRegistry(apiClient, [TEST_BOOTSTRAP_NODE], 10000);
       const newDriver = new Driver(
-          newScope, newScope, new CacheDatabase(newScope), registry, apiClient, webcrypto.subtle);
+          newScope, newScope, new CacheDatabase(newScope), registry, apiClient, subtleCrypto);
 
       await makeRequest(newScope, newManifest.index, baseHref.replace(/\//g, '_'));
       await newDriver.initialized;
@@ -1390,7 +1386,7 @@ describe('Driver', () => {
       const apiClient = new ArmadaAPIClientImpl(scope, scope, 'http:', TEST_PROJECT_ID);
       const registry = new DynamicNodeRegistry(apiClient, [TEST_BOOTSTRAP_NODE], 10000);
       driver =
-          new Driver(scope, scope, new CacheDatabase(scope), registry, apiClient, webcrypto.subtle);
+          new Driver(scope, scope, new CacheDatabase(scope), registry, apiClient, subtleCrypto);
 
       expect(await makeRequest(scope, '/foo.txt')).toEqual(null);
     });
@@ -1610,8 +1606,8 @@ describe('Driver', () => {
         scope = new SwTestHarnessBuilder().withServerState(originalServer).build();
         let apiClient = new ArmadaAPIClientImpl(scope, scope, 'http:', TEST_PROJECT_ID);
         let registry = new DynamicNodeRegistry(apiClient, [TEST_BOOTSTRAP_NODE], 10000);
-        driver = new Driver(
-            scope, scope, new CacheDatabase(scope), registry, apiClient, webcrypto.subtle);
+        driver =
+            new Driver(scope, scope, new CacheDatabase(scope), registry, apiClient, subtleCrypto);
 
         expect(await makeRequest(scope, '/foo.hash.js')).toBe('console.log("FOO");');
         await driver.initialized;
@@ -1629,8 +1625,8 @@ describe('Driver', () => {
                     .build();
         apiClient = new ArmadaAPIClientImpl(scope, scope, 'http:', TEST_PROJECT_ID);
         registry = new DynamicNodeRegistry(apiClient, [TEST_BOOTSTRAP_NODE], 10000);
-        driver = new Driver(
-            scope, scope, new CacheDatabase(scope), registry, apiClient, webcrypto.subtle);
+        driver =
+            new Driver(scope, scope, new CacheDatabase(scope), registry, apiClient, subtleCrypto);
 
         // The SW is still able to serve `foo.hash.js` from the cache.
         expect(await makeRequest(scope, '/foo.hash.js')).toBe('console.log("FOO");');
@@ -1664,8 +1660,8 @@ describe('Driver', () => {
         scope = new SwTestHarnessBuilder().withServerState(originalServer).build();
         const apiClient = new ArmadaAPIClientImpl(scope, scope, 'http:', TEST_PROJECT_ID);
         const registry = new DynamicNodeRegistry(apiClient, [TEST_BOOTSTRAP_NODE], 10000);
-        driver = new Driver(
-            scope, scope, new CacheDatabase(scope), registry, apiClient, webcrypto.subtle);
+        driver =
+            new Driver(scope, scope, new CacheDatabase(scope), registry, apiClient, subtleCrypto);
 
         expect(await makeRequest(scope, '/foo.hash.js', 'client-1')).toBe('console.log("FOO");');
         expect(await makeRequest(scope, '/foo.hash.js', 'client-2')).toBe('console.log("FOO");');
@@ -1677,8 +1673,8 @@ describe('Driver', () => {
                     .withCacheState(scope.caches.original.dehydrate())
                     .withServerState(updatedServer)
                     .build();
-        driver = new Driver(
-            scope, scope, new CacheDatabase(scope), registry, apiClient, webcrypto.subtle);
+        driver =
+            new Driver(scope, scope, new CacheDatabase(scope), registry, apiClient, subtleCrypto);
 
         // The SW is still able to serve `foo.hash.js` from the cache.
         expect(await makeRequest(scope, '/foo.hash.js', 'client-1')).toBe('console.log("FOO");');
@@ -1746,7 +1742,7 @@ describe('Driver', () => {
       const apiClient = new ArmadaAPIClientImpl(scope, scope, 'http:', TEST_PROJECT_ID);
       const registry = new DynamicNodeRegistry(apiClient, [TEST_BOOTSTRAP_NODE], 10000);
       const driver =
-          new Driver(scope, scope, new CacheDatabase(scope), registry, apiClient, webcrypto.subtle);
+          new Driver(scope, scope, new CacheDatabase(scope), registry, apiClient, subtleCrypto);
 
       return {server, scope, driver};
     }

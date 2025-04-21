@@ -1,5 +1,7 @@
 import {webcrypto} from 'crypto';
 
+const subtleCrypto = webcrypto.subtle as unknown as SubtleCrypto;
+
 import {computeCidV1} from '../../src/armada/cid';
 import {ArmadaDriver} from '../../src/armada/driver';
 import {CacheDatabase} from '../../src/db-cache';
@@ -138,7 +140,7 @@ describe('ArmadaDriver', () => {
     const db = new CacheDatabase(scope);
     const registry = new StaticNodeRegistry(contentNodes.map(n => n.host));
     const apiClient = new FakeAPIClient(contentNodes);
-    const driver = new ArmadaDriver(scope, scope, db, registry, apiClient, webcrypto.subtle);
+    const driver = new ArmadaDriver(scope, scope, db, registry, apiClient, subtleCrypto);
     return {scope, db, apiClient, registry, driver};
   }
 

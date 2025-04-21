@@ -6,9 +6,27 @@
  * found in the LICENSE file at https://angular.io/license
  */
 
-import {MockBody as _MockBody, MockHeaders} from '../fetch';
+import {MockBody as _MockBody, MockHeaders, MockRequest as OriginalMockRequest} from '../fetch';
 
-export {MockHeaders, MockRequest} from '../fetch';
+export {MockHeaders} from '../fetch';
+
+// Export a modified MockRequest class with the bytes property
+export class MockRequest extends OriginalMockRequest {
+  // Add the bytes property required by the Request interface
+  readonly bytes: Uint8Array;
+
+  constructor(url: string, init: RequestInit = {}) {
+    super(url, init);
+
+    // Initialize bytes from body
+    if (init.body && typeof init.body === 'string') {
+      const encoder = new TextEncoder();
+      this.bytes = encoder.encode(init.body);
+    } else {
+      this.bytes = new Uint8Array(0);
+    }
+  }
+}
 
 export class MockBody extends _MockBody {
   readonly body!: ReadableStream;
@@ -29,6 +47,9 @@ export class MockBody extends _MockBody {
 //
 // See src/armada/assets.ts for an explanation as to why this is necessary.
 export class MockResponse extends MockBody implements Response {
+  // Add the bytes property required by Response interface
+  readonly bytes: Uint8Array;
+
   readonly trailer: Promise<Headers> = Promise.resolve(new MockHeaders());
   readonly headers: Headers = new MockHeaders();
   get ok(): boolean {
@@ -44,6 +65,19 @@ export class MockResponse extends MockBody implements Response {
       body: string|ReadableStreamStub|null,
       init: ResponseInit&{type?: ResponseType, redirected?: boolean, url?: string} = {}) {
     super((body instanceof ReadableStreamStub) ? body.data : body);
+
+    // Initialize bytes property from body
+    if (body === null) {
+      this.bytes = new Uint8Array(0);
+    } else if (body instanceof ReadableStreamStub) {
+      const bodyStr = body.data || '';
+      const encoder = new TextEncoder();
+      this.bytes = encoder.encode(bodyStr);
+    } else {
+      const encoder = new TextEncoder();
+      this.bytes = encoder.encode(body);
+    }
+
     this.status = (init.status !== undefined) ? init.status : 200;
     this.statusText = (init.statusText !== undefined) ? init.statusText : 'OK';
     const headers = init.headers as {[key: string]: string};
@@ -65,6 +99,11 @@ export class MockResponse extends MockBody implements Response {
     if (init.url !== undefined) {
       this.url = init.url;
     }
+  }
+
+  // Override the arrayBuffer method to use bytes
+  override async arrayBuffer(): Promise<ArrayBuffer> {
+    return this.bytes.buffer;
   }
 
   clone(): Response {

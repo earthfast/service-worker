@@ -1,5 +1,7 @@
 import {webcrypto} from 'crypto';
 
+const subtleCrypto = webcrypto.subtle as unknown as SubtleCrypto;
+
 import {Adapter} from '../../src/adapter';
 import {ArmadaLazyAssetGroup} from '../../src/armada/assets';
 import {computeCidV1} from '../../src/armada/cid';
@@ -9,7 +11,6 @@ import {CacheDatabase} from '../../src/db-cache';
 import {IdleScheduler} from '../../src/idle';
 import {AssetGroupConfig} from '../../src/manifest';
 import {MsgAny} from '../../src/msg';
-import {sha1} from '../../src/sha1';
 import {MockRequest, MockResponse} from '../../testing/armada/fetch';
 import {StaticNodeRegistry} from '../../testing/armada/registry';
 import {SwTestHarnessBuilder} from '../../testing/armada/scope';
@@ -180,7 +181,7 @@ describe('ArmadaLazyAssetGroup', () => {
         const registry = new StaticNodeRegistry([...tc.nodes]);
         const group = new ArmadaLazyAssetGroup(
             adapter, idle, config, hashes, db, 'test', registry, apiClient, broadcaster,
-            webcrypto.subtle);
+            subtleCrypto);
         await group.initializeFully();
 
         const req = new MockRequest(tc.request);
@@ -258,7 +259,7 @@ describe('ArmadaLazyAssetGroup', () => {
         const registry = new StaticNodeRegistry([...tc.nodes]);
         const group = new ArmadaLazyAssetGroup(
             adapter, idle, config, hashes, db, 'test', registry, apiClient, broadcaster,
-            webcrypto.subtle);
+            subtleCrypto);
         await group.initializeFully();
 
         const req = new MockRequest(tc.request);
@@ -278,7 +279,7 @@ describe('ArmadaLazyAssetGroup', () => {
       const registry = new StaticNodeRegistry(['content0', 'content1', 'content2']);
       const group = new ArmadaLazyAssetGroup(
           adapter, idle, config, hashes, db, 'test', registry, apiClient, broadcaster,
-          webcrypto.subtle);
+          subtleCrypto);
       await group.initializeFully();
 
       const req = new MockRequest(helloWorld);
@@ -305,7 +306,7 @@ describe('ArmadaLazyAssetGroup', () => {
       const registry = new StaticNodeRegistry(['content0', 'content1', 'content2']);
       const group = new ArmadaLazyAssetGroup(
           adapter, idle, config, hashes, db, 'test', registry, apiClient, broadcaster,
-          webcrypto.subtle);
+          subtleCrypto);
       await group.initializeFully();
 
       const req = new MockRequest(helloWorld);
@@ -328,8 +329,7 @@ describe('ArmadaLazyAssetGroup', () => {
     const apiClient = new OrderedAPIClient([new MockResponse(helloWorldBody)]);
     const registry = new StaticNodeRegistry(['content0']);
     const group = new ArmadaLazyAssetGroup(
-        adapter, idle, config, hashes, db, 'test', registry, apiClient, broadcaster,
-        webcrypto.subtle);
+        adapter, idle, config, hashes, db, 'test', registry, apiClient, broadcaster, subtleCrypto);
     await group.initializeFully();
 
     const req = new MockRequest(helloWorld);
@@ -349,7 +349,7 @@ describe('ArmadaLazyAssetGroup', () => {
       const registry = new StaticNodeRegistry(['content0', 'content1']);
       const group = new ArmadaLazyAssetGroup(
           adapter, idle, config, hashes, db, 'test', registry, apiClient, broadcaster,
-          webcrypto.subtle);
+          subtleCrypto);
       await group.initializeFully();
 
       const req = new MockRequest(helloWorld);
@@ -388,7 +388,7 @@ describe('ArmadaLazyAssetGroup', () => {
          const registry = new StaticNodeRegistry(nodes);
          const group = new ArmadaLazyAssetGroup(
              adapter, idle, config, hashes, db, 'test', registry, apiClient, broadcaster,
-             webcrypto.subtle);
+             subtleCrypto);
          await group.initializeFully();
 
          const req = new MockRequest(helloWorld);
