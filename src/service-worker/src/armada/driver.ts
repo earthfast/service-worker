@@ -202,11 +202,8 @@ export class ArmadaDriver extends Driver {
 
   protected async handleNavigationRequest(request: Request, clientId: string):
       Promise<Response|null> {
-    // Use a default client ID when empty
-    const effectiveClientId = clientId || 'default';
-
-    // Get the app version assigned to this client - use our effective ID
-    const appVersion = await this.assignVersion({clientId: effectiveClientId} as FetchEvent);
+    // Get the app version assigned to this client
+    const appVersion = await this.assignVersion({clientId, request} as FetchEvent);
 
     if (!appVersion) {
       return null;
@@ -218,11 +215,13 @@ export class ArmadaDriver extends Driver {
         // In performance mode, redirect to index
         const indexUrl = appVersion.manifest.index;
 
-        // Mock a fetch event with our effective client ID
-        const mockEvent = {clientId: effectiveClientId} as FetchEvent;
+        // Create a proper URL by resolving against the scope
+        const scope = this.scope.registration.scope;
+        const fullUrl = new URL(indexUrl, scope).toString();
 
         // Use the app version to handle the request to ensure proper CID validation
-        return await appVersion.handleFetch(new Request(indexUrl), mockEvent);
+        return await appVersion.handleFetch(
+            new Request(fullUrl), {clientId, request} as FetchEvent);
       } else {
         // In freshness mode, fetch from network directly
         return await this.safeFetch(request);
