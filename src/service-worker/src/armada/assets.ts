@@ -178,19 +178,21 @@ export class ArmadaLazyAssetGroup extends LazyAssetGroup {
     try {
       const buffer = await response.arrayBuffer();
 
-      // If the hash is in the old SHA format (for backward compatibility in tests)
-      if (canonicalCid.length === 64 && /^[0-9a-f]+$/.test(canonicalCid)) {
-        const digest = await this.subtleCrypto.digest('SHA-256', buffer);
-        const actualHash =
-            [...new Uint8Array(digest)].map(b => b.toString(16).padStart(2, '0')).join('');
-        return actualHash === canonicalCid;
-      }
+      // Log for debugging in tests
+      const text = new TextDecoder().decode(buffer);
+      console.debug(
+          `Verifying content for ${url}: "${text.substring(0, 30)}..." with CID: ${canonicalCid}`);
 
-      // Otherwise verify with CID v1
+      // Generate CID for the content we received
       const fetchedCid = await computeCidV1(buffer);
-      return fetchedCid === canonicalCid;
+
+      // Compare with the expected CID
+      const matches = fetchedCid === canonicalCid;
+      if (!matches) {
+        console.debug(`CID mismatch: expected ${canonicalCid}, got ${fetchedCid}`);
+      }
+      return matches;
     } catch (e) {
-      // Log the error but don't swallow it - this ensures verification really fails
       console.error(`Error verifying hash for ${url}:`, e);
       return false;
     }

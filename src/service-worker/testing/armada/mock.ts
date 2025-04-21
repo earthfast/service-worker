@@ -63,12 +63,14 @@ export class MockFileSystemBuilder {
   addFile(
       path: string, contents: string, headers?: HeaderMap, port?: number, additional: string = '',
       brokenHash: boolean = false): MockFileSystemBuilder {
-    this.resources.set(path, new MockFile(path, contents, headers, true, brokenHash));
+    // Automatically detect broken content by looking for "(broken)" in the content
+    const isContentBroken = brokenHash || contents.includes('(broken)');
+    this.resources.set(path, new MockFile(path, contents, headers, true, isContentBroken));
 
     const projectId = encodeURIComponent(TEST_PROJECT_ID);
     const pathKey =
         `/v1/content?project_id=${projectId}&resource=${encodeURIComponent(path)}${additional}`;
-    this.resources.set(pathKey, new MockFile(path, contents, headers, true, brokenHash));
+    this.resources.set(pathKey, new MockFile(path, contents, headers, true, isContentBroken));
 
     return this;
   }
@@ -439,7 +441,14 @@ export function tmpHashTableForFs(
   return table;
 }
 
-// CID-based hash table function for tests
+export async function createBrokenCid(content: string): Promise<string> {
+  // Create a CID from completely different content
+  const wrongContent = 'INTENTIONALLY WRONG CONTENT ' + Math.random();
+  const encoder = new TextEncoder();
+  const buffer = encoder.encode(wrongContent).buffer;
+  return computeCidV1(buffer);
+}
+
 export async function cidHashTableForFs(
     fs: MockFileSystem, breakHashes: {[url: string]: boolean} = {},
     baseHref = '/'): Promise<{[url: string]: string}> {
@@ -451,15 +460,17 @@ export async function cidHashTableForFs(
     if (!file) continue;
 
     if (file.hashThisFile) {
-      const encoder = new TextEncoder();
+      // Check if this file should have a broken hash
+      const shouldBreak =
+          file.brokenHash || breakHashes[filePath] || file.contents.includes('(broken)');
 
-      // Create explicitly broken CIDs for files that should fail verification
-      if (file.brokenHash || breakHashes[filePath]) {
-        // Generate completely different content for broken files
-        const wrongContent = 'THIS CONTENT WILL GENERATE A DIFFERENT CID';
-        const wrongBuffer = encoder.encode(wrongContent).buffer;
-        table[urlPath] = await computeCidV1(wrongBuffer);
+      if (shouldBreak) {
+        // Generate intentionally wrong CID
+        table[urlPath] = await createBrokenCid(file.contents);
+        console.debug(`Created broken CID for ${urlPath}`);
       } else {
+        // Generate correct CID
+        const encoder = new TextEncoder();
         const buffer = encoder.encode(file.contents).buffer;
         table[urlPath] = await computeCidV1(buffer);
       }

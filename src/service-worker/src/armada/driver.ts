@@ -118,18 +118,19 @@ export class ArmadaDriver extends Driver {
 
     // Special handling for navigation requests
     if (req.mode === 'navigate') {
-      // On navigation requests, check for new updates - but don't wait for completion
+      // For navigation requests, check for updates immediately
+      // (not in the idle scheduler)
       if (!this.scheduledNavUpdateCheck) {
         this.scheduledNavUpdateCheck = true;
-        // Schedule immediately and with high priority
-        const checkPromise = this.checkForUpdate()
-                                 .catch(err => {
-                                   console.error('Update check failed:', err);
-                                 })
-                                 .finally(() => {
-                                   this.scheduledNavUpdateCheck = false;
-                                 });
-        event.waitUntil(checkPromise);
+
+        // Run check synchronously before continuing with navigation
+        try {
+          await this.checkForUpdate();
+        } catch (err) {
+          console.error('Update check failed:', err);
+        } finally {
+          this.scheduledNavUpdateCheck = false;
+        }
       }
 
       // Handle navigation with special logic
@@ -202,8 +203,12 @@ export class ArmadaDriver extends Driver {
 
   protected async handleNavigationRequest(request: Request, clientId: string):
       Promise<Response|null> {
-    // Get the app version assigned to this client
-    const appVersion = await this.assignVersion({clientId, request} as FetchEvent);
+    // Use a default client ID when empty
+    const effectiveClientId = clientId || 'default';
+
+    // Get the app version assigned to this client - use our effective ID
+    const appVersion =
+        await this.assignVersion({clientId: effectiveClientId, request} as FetchEvent);
 
     if (!appVersion) {
       return null;
@@ -217,13 +222,17 @@ export class ArmadaDriver extends Driver {
 
         // Create a proper URL by resolving against the scope
         const scope = this.scope.registration.scope;
-        const fullUrl = new URL(indexUrl, scope).toString();
+        const fullUrl =
+            new URL(indexUrl.startsWith('/') ? indexUrl : `/${indexUrl}`, scope).toString();
+
+        console.debug(`Navigation redirect to index: ${fullUrl}`);
 
         // Use the app version to handle the request to ensure proper CID validation
         return await appVersion.handleFetch(
-            new Request(fullUrl), {clientId, request} as FetchEvent);
+            new Request(fullUrl), {clientId: effectiveClientId, request} as FetchEvent);
       } else {
-        // In freshness mode, fetch from network directly
+        // In freshness mode, pass through to network
+        console.debug(`Navigation in freshness mode, passing through: ${request.url}`);
         return await this.safeFetch(request);
       }
     } catch (err) {
