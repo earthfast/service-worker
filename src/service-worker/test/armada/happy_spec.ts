@@ -1792,8 +1792,8 @@ function makeNavigationRequest(
 
   // Use a retry mechanism - navigation requests may be redirected to index
   async function attemptRequest(): Promise<string|null> {
-    const [resPromise, done] = scope.handleFetch(
-        new MockFetchEvent(request, clientId || 'default'), clientId || 'default');
+    // Pass the request directly, not wrapped in a MockFetchEvent
+    const [resPromise, done] = scope.handleFetch(request, clientId || 'default');
 
     await done;
     const res = await resPromise;
