@@ -114,6 +114,9 @@
                 </tbody>
               </table>
             </div>
+            <div class="stage-progress" id="stage-resources-progress">
+              <div class="stage-progress-text">0/0 resources</div>
+            </div>
           </div>
         </div>
       </div>
@@ -982,6 +985,92 @@
       updateRequestsTable();
       return sortedRequests;
     };
+
+    // Update the stage statuses based on request data
+    function updateStageStatuses() {
+      // Check if we have manifest requests
+      const hasManifestRequests = requests.some(req => 
+        req.isTrackedRequest && 
+        req.resource && 
+        ['earthfast.json', 'armada.json'].includes(req.resource)
+      );
+      
+      if (hasManifestRequests && !stages['stage-manifest'].started) {
+        updateStageStatus('stage-manifest', 'running');
+      }
+      
+      // If we have successful manifest consensus, mark manifest stage as complete
+      if (manifestNodes.success >= Math.floor(manifestNodes.total / 2) + 1 && 
+          stages['stage-manifest'].started && 
+          !stages['stage-manifest'].completed) {
+        updateStageStatus('stage-manifest', 'success');
+      }
+      
+      // Check if we have index.html requests
+      const indexRequests = requests.filter(req => 
+        req.isTrackedRequest && 
+        req.resource && 
+        (req.resource === 'index.html' || req.url.endsWith('/index.html'))
+      );
+      
+      if (indexRequests.length > 0) {
+        if (!stages['stage-index'].started) {
+          updateStageStatus('stage-index', 'running');
+        }
+        
+        // If we have a successful index.html request, mark it as complete
+        const successfulIndexRequest = indexRequests.find(req => req.success);
+        if (successfulIndexRequest && !stages['stage-index'].completed) {
+          updateStageStatus('stage-index', 'success');
+        }
+      }
+      
+      // Check if we have other resource requests
+      const resourceRequests = requests.filter(req => 
+        req.isTrackedRequest && 
+        req.resource && 
+        !['earthfast.json', 'armada.json', 'nodes'].includes(req.resource) &&
+        !req.url.endsWith('/index.html')
+      );
+      
+      if (resourceRequests.length > 0) {
+        if (!stages['stage-resources'].started) {
+          updateStageStatus('stage-resources', 'running');
+        }
+        
+        // Count successful resources
+        const successfulResources = resourceRequests.filter(req => req.success).length;
+        
+        // Update the resources progress
+        const resourcesProgress = document.getElementById('stage-resources-progress');
+        if (resourcesProgress) {
+          resourcesProgress.innerHTML = `
+            <div class="stage-progress-text">${successfulResources}/${resourceRequests.length} resources</div>
+          `;
+        }
+      }
+      
+      // If index is loaded and we have some resources, show the ready stage
+      if (stages['stage-index'].completed && resourceRequests.length > 0) {
+        if (!stages['stage-ready'].started) {
+          updateStageStatus('stage-ready', 'running');
+        }
+        
+        // If we have at least 5 successful resources or 80% of resources loaded, mark as ready
+        const successfulResources = resourceRequests.filter(req => req.success).length;
+        const resourceThreshold = Math.min(5, Math.floor(resourceRequests.length * 0.8));
+        
+        if (successfulResources >= resourceThreshold && !stages['stage-ready'].completed) {
+          updateStageStatus('stage-ready', 'success');
+          
+          // Enable the continue button
+          const readyButton = document.getElementById('stage-ready-button');
+          if (readyButton) {
+            readyButton.disabled = false;
+          }
+        }
+      }
+    }
 
   </script>
 </body>

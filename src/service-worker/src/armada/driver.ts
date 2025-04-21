@@ -297,9 +297,126 @@ export class ArmadaDriver extends Driver {
     return super.notifyClientsAboutVersionDetected(manifest, hash);
   }
 
-  // Armada:
-  // New function
+  /**
+   * Preload the index.html and key assets in the background
+   * This helps prepare the site while the user is viewing the loading page
+   */
+  protected async preloadSiteAssets(): Promise<void> {
+    try {
+      // Get the latest manifest
+      const manifest = await this.fetchLatestManifest();
+      const hash = hashManifest(manifest);
+      
+      // Create an app version for this manifest if it doesn't exist
+      if (!this.versions.has(hash)) {
+        await this.setupUpdate(manifest, hash);
+      }
+      
+      // Get the app version
+      const appVersion = this.versions.get(hash);
+      if (!appVersion) {
+        return;
+      }
+      
+      // First, preload index.html
+      const indexUrl = this.adapter.normalizeUrl(manifest.index);
+      const indexReq = this.adapter.newRequest(indexUrl);
+      
+      let indexHtml = '';
+      try {
+        const indexResponse = await appVersion.handleFetch(indexReq, new ExtendableEvent('fetch'));
+        if (indexResponse) {
+          indexHtml = await indexResponse.text();
+          this.debugger.log('Preloaded index.html successfully');
+        }
+      } catch (err) {
+        this.debugger.log(err as Error, 'Error preloading index.html');
+      }
+      
+      // Extract linked resources from index.html
+      const linkedResources: string[] = [];
+      if (indexHtml) {
+        // Extract <link> tags (CSS, etc.)
+        const linkRegex = /<link[^>]*href=["']([^"']+)["'][^>]*>/gi;
+        let linkMatch;
+        while ((linkMatch = linkRegex.exec(indexHtml)) !== null) {
+          if (linkMatch[1] && !linkMatch[1].startsWith('http')) {
+            linkedResources.push(linkMatch[1]);
+          }
+        }
+        
+        // Extract <script> tags
+        const scriptRegex = /<script[^>]*src=["']([^"']+)["'][^>]*>/gi;
+        let scriptMatch;
+        while ((scriptMatch = scriptRegex.exec(indexHtml)) !== null) {
+          if (scriptMatch[1] && !scriptMatch[1].startsWith('http')) {
+            linkedResources.push(scriptMatch[1]);
+          }
+        }
+        
+        // Extract <img> tags
+        const imgRegex = /<img[^>]*src=["']([^"']+)["'][^>]*>/gi;
+        let imgMatch;
+        while ((imgMatch = imgRegex.exec(indexHtml)) !== null) {
+          if (imgMatch[1] && !imgMatch[1].startsWith('http')) {
+            linkedResources.push(imgMatch[1]);
+          }
+        }
+        
+        this.debugger.log(`Found ${linkedResources.length} linked resources in index.html`);
+      }
+      
+      // Combine linked resources with manifest assets
+      const manifestAssets = Object.keys(manifest.hashTable).slice(0, 10);
+      const allAssets = [...new Set([...linkedResources, ...manifestAssets])];
+      
+      // Preload assets in parallel with a limit of 3 concurrent requests
+      const preloadBatch = async (urls: string[]) => {
+        for (const url of urls) {
+          try {
+            // Normalize the URL (handle relative paths)
+            let normalizedUrl = url;
+            if (url.startsWith('/')) {
+              normalizedUrl = url;
+            } else if (!url.startsWith('http')) {
+              // Handle relative paths by joining with the index path
+              const indexPath = indexUrl.substring(0, indexUrl.lastIndexOf('/') + 1);
+              normalizedUrl = indexPath + url;
+            }
+            
+            const req = this.adapter.newRequest(this.adapter.normalizeUrl(normalizedUrl));
+            await appVersion.handleFetch(req, new ExtendableEvent('fetch'));
+          } catch (err) {
+            this.debugger.log(err as Error, `Error preloading asset: ${url}`);
+          }
+        }
+      };
+      
+      // Split assets into batches of 3
+      const batches: string[][] = [];
+      for (let i = 0; i < allAssets.length; i += 3) {
+        batches.push(allAssets.slice(i, i + 3));
+      }
+      
+      // Process batches sequentially
+      for (const batch of batches) {
+        await preloadBatch(batch);
+      }
+      
+      this.debugger.log(`Preloaded ${allAssets.length} assets successfully`);
+    } catch (err) {
+      this.debugger.log(err as Error, 'Error in preloadSiteAssets');
+    }
+  }
+
+  // Modify the notifyClientsAboutInitialization method to start preloading
   async notifyClientsAboutInitialization(): Promise<void> {
+    // Start preloading assets in the background
+    this.idle.schedule('preload-site-assets', async () => {
+      await this.preloadSiteAssets();
+    });
+    
+    // Notify clients that initialization is complete
     return this.broadcast({type: 'INITIALIZED'});
   }
 
