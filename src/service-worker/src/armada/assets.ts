@@ -169,6 +169,8 @@ export class ArmadaLazyAssetGroup extends LazyAssetGroup {
    * Determine if the hash of an asset matches a hash of the response
    */
   async hashMatches(url: string, response: Response): Promise<boolean> {
+    const isDebug = false;  // Set to true for debugging
+
     url = this.adapter.normalizeUrl(url);
     const canonicalCid = this.hashes.get(url);
     if (!canonicalCid) {
@@ -178,17 +180,19 @@ export class ArmadaLazyAssetGroup extends LazyAssetGroup {
     try {
       const buffer = await response.arrayBuffer();
 
-      // Log for debugging in tests
-      const text = new TextDecoder().decode(buffer);
-      console.debug(
-          `Verifying content for ${url}: "${text.substring(0, 30)}..." with CID: ${canonicalCid}`);
+      // Log for debugging in tests - only if debug mode is on
+      if (isDebug) {
+        const text = new TextDecoder().decode(buffer);
+        console.debug(`Verifying content for ${url}: "${text.substring(0, 30)}..." with CID: ${
+            canonicalCid}`);
+      }
 
       // Generate CID for the content we received
       const fetchedCid = await computeCidV1(buffer);
 
       // Compare with the expected CID
       const matches = fetchedCid === canonicalCid;
-      if (!matches) {
+      if (!matches && isDebug) {
         console.debug(`CID mismatch: expected ${canonicalCid}, got ${fetchedCid}`);
       }
       return matches;

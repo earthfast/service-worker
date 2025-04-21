@@ -221,11 +221,20 @@ export class MockServerState {
   private resolveNextRequest!: Function;
   online = true;
   nextRequest: Promise<Request>;
+  scope: string = 'http://localhost/';
 
   constructor(private resources: Map<string, Response>, private errors: Set<string>) {
     this.nextRequest = new Promise(resolve => {
       this.resolveNextRequest = resolve;
     });
+  }
+
+  setScope(scope: string): void {
+    this.scope = scope;
+  }
+
+  addRequest(req: Request): void {
+    this.requests.push(req);
   }
 
   async fetch(req: Request): Promise<Response> {

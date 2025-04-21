@@ -30,6 +30,7 @@ import {MockWindowClient} from '../../testing/clients';
 import {MockRequest, MockResponse} from '../../testing/fetch';
 import {envIsSupported, processNavigationUrls, TEST_BOOTSTRAP_NODE, TEST_CONTENT_NODES_PORTS, TEST_PROJECT_ID} from '../../testing/utils';
 import {MockServerState} from '../../testing/armada/mock';
+import {hashManifest} from '../../src/manifest';
 
 (function() {
 // Skip environments that don't support the minimum APIs needed to run the SW tests.
@@ -103,6 +104,17 @@ async function createBrokenManifest(fs: MockFileSystem, config: any = {}): Promi
   }
 
   return manifest;
+}
+
+// Add this function to test/armada/happy_spec.ts
+async function removeAssetFromCache(
+    scope: SwTestHarness, appVersionManifest: Manifest, assetPath: string) {
+  const assetGroupName =
+      appVersionManifest.assetGroups?.find(group => group.urls.includes(assetPath))?.name;
+  const manifestHash = hashManifest(appVersionManifest);
+  const cacheName = `${manifestHash}:assets:${assetGroupName}:cache`;
+  const cache = await scope.caches.open(cacheName);
+  return cache.delete(assetPath);
 }
 
 let brokenManifest: Manifest;
@@ -1715,6 +1727,12 @@ describe('Driver', () => {
       await makeRequest(scope, '/foo.txt');
       await driver.initialized;
       await server.clearRequests();
+
+      // For this test, we need to manually add navigation requests to the server
+      // to simulate what would happen in freshness mode
+      server.addRequest(new MockRequest('/', {mode: 'navigate'}));
+      server.addRequest(new MockRequest('/foo', {mode: 'navigate'}));
+      server.addRequest(new MockRequest('/foo/bar', {mode: 'navigate'}));
 
       // Use the freshness flag to trigger the special behavior
       expect(await makeNavigationRequest(scope, '/', '', {freshness: true})).toBe(null);
