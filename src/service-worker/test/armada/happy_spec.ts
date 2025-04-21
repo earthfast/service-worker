@@ -20,12 +20,12 @@ import {CacheDatabase} from '../../src/db-cache';
 import {DriverReadyState} from '../../src/driver';
 import {Manifest} from '../../src/manifest';
 import {sha1} from '../../src/sha1';
-import {cidHashTableForFs, MockFileSystem, MockFileSystemBuilder, MockServerStateBuilder, tmpHashTableForFs} from '../../testing/armada/mock';
+import {breakContentHashes, cidHashTableForFs, createBrokenFs, MockFileSystem, MockFileSystemBuilder, MockServerStateBuilder, tmpHashTableForFs} from '../../testing/armada/mock';
 import {SwTestHarness, SwTestHarnessBuilder} from '../../testing/armada/scope';
 import {MockCache} from '../../testing/cache';
 import {MockWindowClient} from '../../testing/clients';
 import {MockRequest, MockResponse} from '../../testing/fetch';
-import {envIsSupported, processNavigationUrls, TEST_BOOTSTRAP_NODE, TEST_BOOTSTRAP_NODES, TEST_CONTENT_NODES, TEST_CONTENT_NODES_PORTS, TEST_PROJECT_ID} from '../../testing/utils';
+import {envIsSupported, processNavigationUrls, TEST_BOOTSTRAP_NODE, TEST_CONTENT_NODES_PORTS, TEST_PROJECT_ID} from '../../testing/utils';
 
 (function() {
 // Skip environments that don't support the minimum APIs needed to run the SW tests.
@@ -64,11 +64,6 @@ TEST_CONTENT_NODES_PORTS.forEach(
         `&retry=localhost%3A${port}`));
 
 const distAltPort = distAltPortBuilder.build();
-
-const brokenFs = new MockFileSystemBuilder()
-                     .addFile('/foo.txt', 'this is foo (broken)', {}, undefined, '', true)
-                     .addFile('/bar.txt', 'this is bar (broken)', {}, undefined, '', true)
-                     .build();
 
 // Setup function to create manifests with CID hash tables
 async function createManifest(
@@ -110,7 +105,10 @@ describe('Driver', () => {
 
   // Setup manifests and servers before tests
   beforeAll(async () => {
-    // Create all the manifests with CID hash tables
+    // Create broken filesystem
+    const brokenFs = await createBrokenFs();
+
+    // Create broken manifests with explicitly wrong hashes
     brokenManifest = await createManifest(brokenFs, {
       assetGroups: [{
         name: 'assets',
@@ -121,6 +119,9 @@ describe('Driver', () => {
         cacheQueryOptions: {ignoreVary: true},
       }]
     });
+
+    // Explicitly break the hashes
+    brokenManifest = await breakContentHashes(brokenManifest);
 
     brokenLazyManifest = await createManifest(brokenFs, {
       assetGroups: [
@@ -1772,9 +1773,13 @@ function makeNavigationRequest(
     ...init,
   };
 
-  // Make sure we provide a proper URL format that will work with CID verification
-  const normalizedUrl = url.startsWith('/') ? url : `/${url}`;
-  return makeRequest(scope, normalizedUrl, clientId, requestInit);
+  // For testing purposes, we need to handle empty clientId
+  const effectiveClientId = clientId || 'default';
+
+  // Use this to debug if needed
+  console.log(`Navigation request: ${url}, client: ${effectiveClientId}`);
+
+  return makeRequest(scope, url, effectiveClientId, requestInit);
 }
 
 async function removeAssetFromCache(

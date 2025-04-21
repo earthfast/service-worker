@@ -452,10 +452,37 @@ export function tmpHashTable(manifest: Manifest): Map<string, string> {
   return map;
 }
 
-// Helpers
-/**
- * Join two path segments, ensuring that there is exactly one slash (`/`) between them.
- */
 function joinPaths(path1: string, path2: string): string {
   return `${path1.replace(/\/$/, '')}/${path2.replace(/^\//, '')}`;
+}
+
+export async function createBrokenFs() {
+  const fs = new MockFileSystemBuilder()
+                 // Explicitly mark these as broken (last parameter = true)
+                 .addFile('/foo.txt', 'this is foo (broken)', {}, undefined, '', true)
+                 .addFile('/bar.txt', 'this is bar (broken)', {}, undefined, '', true)
+                 .build();
+
+  // Return the filesystem with known broken content
+  return fs;
+}
+
+export async function breakContentHashes(manifest: Manifest): Promise<Manifest> {
+  // Create a copy to modify
+  const modifiedManifest = {...manifest};
+
+  // For each entry that contains '(broken)' text, create an intentionally wrong CID
+  const wrongContent = 'COMPLETELY DIFFERENT CONTENT TO BREAK HASH VERIFICATION';
+  const encoder = new TextEncoder();
+  const wrongBuffer = encoder.encode(wrongContent).buffer;
+  const wrongCid = await computeCidV1(wrongBuffer);
+
+  // Replace hashes in the hash table
+  for (const url in modifiedManifest.hashTable) {
+    if (url.includes('broken') || url === '/bar.txt' || url === '/foo.txt') {
+      modifiedManifest.hashTable[url] = wrongCid;
+    }
+  }
+
+  return modifiedManifest;
 }
