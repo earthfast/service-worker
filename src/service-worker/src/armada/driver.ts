@@ -118,13 +118,18 @@ export class ArmadaDriver extends Driver {
 
     // Special handling for navigation requests
     if (req.mode === 'navigate') {
-      // On navigation requests, check for new updates.
+      // On navigation requests, check for new updates - but don't wait for completion
       if (!this.scheduledNavUpdateCheck) {
         this.scheduledNavUpdateCheck = true;
-        this.idle.schedule('check-updates-on-navigation', async () => {
-          this.scheduledNavUpdateCheck = false;
-          await this.checkForUpdate();
-        });
+        // Schedule immediately and with high priority
+        const checkPromise = this.checkForUpdate()
+                                 .catch(err => {
+                                   console.error('Update check failed:', err);
+                                 })
+                                 .finally(() => {
+                                   this.scheduledNavUpdateCheck = false;
+                                 });
+        event.waitUntil(checkPromise);
       }
 
       // Handle navigation with special logic
@@ -197,8 +202,11 @@ export class ArmadaDriver extends Driver {
 
   protected async handleNavigationRequest(request: Request, clientId: string):
       Promise<Response|null> {
-    // Get the app version assigned to this client
-    const appVersion = await this.assignVersion({clientId} as FetchEvent);
+    // Use a default client ID when empty
+    const effectiveClientId = clientId || 'default';
+
+    // Get the app version assigned to this client - use our effective ID
+    const appVersion = await this.assignVersion({clientId: effectiveClientId} as FetchEvent);
 
     if (!appVersion) {
       return null;
@@ -210,8 +218,11 @@ export class ArmadaDriver extends Driver {
         // In performance mode, redirect to index
         const indexUrl = appVersion.manifest.index;
 
+        // Mock a fetch event with our effective client ID
+        const mockEvent = {clientId: effectiveClientId} as FetchEvent;
+
         // Use the app version to handle the request to ensure proper CID validation
-        return await appVersion.handleFetch(new Request(indexUrl), {clientId} as FetchEvent);
+        return await appVersion.handleFetch(new Request(indexUrl), mockEvent);
       } else {
         // In freshness mode, fetch from network directly
         return await this.safeFetch(request);

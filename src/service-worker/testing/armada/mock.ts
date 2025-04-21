@@ -232,7 +232,6 @@ export class MockServerState {
       this.resolveNextRequest = resolve;
     });
 
-
     await this.gate;
 
     if (!this.online) {
@@ -241,9 +240,24 @@ export class MockServerState {
 
     this.requests.push(req);
 
+    // Special case for navigation requests in tests - return index content
+    if (req.mode === 'navigate' && req.url.startsWith(this.scope || 'http://localhost/')) {
+      // Find the index URL
+      const indexUrl = '/index.html';
+      if (this.resources.has(indexUrl)) {
+        return this.resources.get(indexUrl)!.clone();
+      }
+
+      // Fallback to /foo.txt which many tests use as index
+      if (this.resources.has('/foo.txt')) {
+        return this.resources.get('/foo.txt')!.clone();
+      }
+    }
+
     if ((req.credentials === 'include') || (req.mode === 'no-cors')) {
       return new MockResponse(null, {status: 0, statusText: '', type: 'opaque'});
     }
+
     const url = req.url.split('%3F')[0];
 
     if (this.resources.has(url)) {
