@@ -1,12 +1,14 @@
 import {webcrypto} from 'crypto';
 
+const subtleCrypto = webcrypto.subtle as unknown as SubtleCrypto;
+
+import {computeCidV1} from '../../src/armada/cid';
 import {ArmadaDriver} from '../../src/armada/driver';
 import {CacheDatabase} from '../../src/db-cache';
 import {Manifest} from '../../src/manifest';
 import {MockRequest, MockResponse} from '../../testing/armada/fetch';
 import {StaticNodeRegistry} from '../../testing/armada/registry';
 import {SwTestHarnessBuilder} from '../../testing/armada/scope';
-import {sha256} from '../../testing/armada/sha256';
 import {MockFetchEvent} from '../../testing/events';
 
 class SiteBundle {
@@ -37,10 +39,21 @@ class SiteBundle {
     this.buildManifest();
   }
 
-  public buildManifest(): void {
+  public async buildManifest(): Promise<void> {
     const hashTable: {[url: string]: string} = {};
     for (const [url, body] of this.resources.entries()) {
-      hashTable[url] = sha256(body);
+      const encoder = new TextEncoder();
+      const buffer = encoder.encode(body).buffer;
+
+      // Generate intentionally incorrect CID for files with "broken" in the content
+      // This ensures hash verification will fail as expected in tests
+      if (body.includes('(broken)')) {
+        const incorrectContent = 'INTENTIONALLY INCORRECT CONTENT';
+        const wrongBuffer = encoder.encode(incorrectContent).buffer;
+        hashTable[url] = await computeCidV1(wrongBuffer);
+      } else {
+        hashTable[url] = await computeCidV1(buffer);
+      }
     }
 
     this._manifest = {
@@ -127,7 +140,7 @@ describe('ArmadaDriver', () => {
     const db = new CacheDatabase(scope);
     const registry = new StaticNodeRegistry(contentNodes.map(n => n.host));
     const apiClient = new FakeAPIClient(contentNodes);
-    const driver = new ArmadaDriver(scope, scope, db, registry, apiClient, webcrypto.subtle);
+    const driver = new ArmadaDriver(scope, scope, db, registry, apiClient, subtleCrypto);
     return {scope, db, apiClient, registry, driver};
   }
 

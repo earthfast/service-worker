@@ -111,20 +111,37 @@ export class ArmadaDriver extends Driver {
   }
 
   override async handleFetch(event: FetchEvent): Promise<Response> {
-    // Armada:
     // Require that the SW instance has been initialized.
     await this.ensureInitialized(event);
 
-    // On navigation requests, check for new updates.
-    if (event.request.mode === 'navigate' && !this.scheduledNavUpdateCheck) {
-      this.scheduledNavUpdateCheck = true;
-      this.idle.schedule('check-updates-on-navigation', async () => {
-        this.scheduledNavUpdateCheck = false;
-        await this.checkForUpdate();
-      });
+    const req = event.request;
+
+    // Special handling for navigation requests
+    if (req.mode === 'navigate') {
+      // For navigation requests, check for updates immediately
+      // (not in the idle scheduler)
+      if (!this.scheduledNavUpdateCheck) {
+        this.scheduledNavUpdateCheck = true;
+
+        // Run check synchronously before continuing with navigation
+        try {
+          await this.checkForUpdate();
+        } catch (err) {
+          console.error('Update check failed:', err);
+        } finally {
+          this.scheduledNavUpdateCheck = false;
+        }
+      }
+
+      // Handle navigation with special logic
+      const navigationResponse = await this.handleNavigationRequest(req, event.clientId);
+      if (navigationResponse) {
+        // Make sure we trigger idle tasks
+        event.waitUntil(this.idle.trigger());
+        return navigationResponse;
+      }
     }
 
-    // Armada:
     // Don't integrity check remote requests.
     const url = this.adapter.normalizeUrl(event.request.url);
     if (!url.startsWith('/')) {
@@ -181,6 +198,46 @@ export class ArmadaDriver extends Driver {
       // on a subsequent request), the idle task queue will be drained and the `Promise` won't
       // be resolved until that operation is complete as well.
       event.waitUntil(this.idle.trigger());
+    }
+  }
+
+  protected async handleNavigationRequest(request: Request, clientId: string):
+      Promise<Response|null> {
+    // Use a default client ID when empty
+    const effectiveClientId = clientId || 'default';
+
+    // Get the app version assigned to this client - use our effective ID
+    const appVersion =
+        await this.assignVersion({clientId: effectiveClientId, request} as FetchEvent);
+
+    if (!appVersion) {
+      return null;
+    }
+
+    try {
+      // Check the navigation strategy from the manifest
+      if (appVersion.manifest.navigationRequestStrategy !== 'freshness') {
+        // In performance mode, redirect to index
+        const indexUrl = appVersion.manifest.index;
+
+        // Create a proper URL by resolving against the scope
+        const scope = this.scope.registration.scope;
+        const fullUrl =
+            new URL(indexUrl.startsWith('/') ? indexUrl : `/${indexUrl}`, scope).toString();
+
+        console.debug(`Navigation redirect to index: ${fullUrl}`);
+
+        // Use the app version to handle the request to ensure proper CID validation
+        return await appVersion.handleFetch(
+            new Request(fullUrl), {clientId: effectiveClientId, request} as FetchEvent);
+      } else {
+        // In freshness mode, pass through to network
+        console.debug(`Navigation in freshness mode, passing through: ${request.url}`);
+        return await this.safeFetch(request);
+      }
+    } catch (err) {
+      console.error('Navigation request handling error:', err);
+      return this.adapter.newResponse(null, {status: 404, statusText: 'Not Found'});
     }
   }
 
@@ -251,9 +308,10 @@ export class ArmadaDriver extends Driver {
   override async checkForUpdate(): Promise<boolean> {
     let hash = '(unknown)';
     try {
-      // Probe a random content node to determine if there *might* be a new version available. Since
-      // we don't consider any single content node to be authoritative, this is just an inexpensive
-      // signal that tells us whether we need to poll all the nodes (expensive) or not.
+      // Probe a random content node to determine if there *might* be a new version available.
+      // Since we don't consider any single content node to be authoritative, this is just an
+      // inexpensive signal that tells us whether we need to poll all the nodes (expensive) or
+      // not.
       const probeManifest = await this.probeLatestManifest();
       if (this.latestHash == hashManifest(probeManifest)) {
         return false;

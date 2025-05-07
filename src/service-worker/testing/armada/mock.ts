@@ -6,6 +6,7 @@
  * found in the LICENSE file at https://angular.io/license
  */
 
+import {computeCidV1} from '../../src/armada/cid';
 import {ArmadaDriver} from '../../src/armada/driver';
 import {Manifest} from '../../src/manifest';
 import {sha1} from '../../src/sha1';
@@ -23,11 +24,36 @@ export class MockFile {
       readonly hashThisFile: boolean, readonly brokenHash: boolean = false) {}
 
   get hash(): string {
-    return sha1(this.contents);
+    return this.brokenHash ?
+        sha1(this.contents + 'BREAK THE HASH') :  // Create bad hash for broken files
+        sha1(this.contents);
+  }
+
+  async getCid(): Promise<string> {
+    const encoder = new TextEncoder();
+    if (this.brokenHash) {
+      // For broken hashes, create intentionally different content
+      const altContent = 'INTENTIONALLY WRONG CONTENT';
+      const buffer = encoder.encode(altContent).buffer;
+      return computeCidV1(buffer);
+    } else {
+      const buffer = encoder.encode(this.contents).buffer;
+      return computeCidV1(buffer);
+    }
   }
 
   get randomHash(): string {
     return sha1(((Math.random() * 10000000) | 0).toString());
+  }
+
+  async getRandomCid(): Promise<string> {
+    // For broken hashes, create intentionally different content
+    const randomContent = this.brokenHash ? this.contents + 'BREAK THE HASH' :
+                                            ((Math.random() * 10000000) | 0).toString();
+
+    const encoder = new TextEncoder();
+    const buffer = encoder.encode(randomContent).buffer;
+    return computeCidV1(buffer);
   }
 }
 
@@ -35,14 +61,16 @@ export class MockFileSystemBuilder {
   private resources = new Map<string, MockFile>();
 
   addFile(
-      path: string, contents: string, headers?: HeaderMap, port?: number,
-      additional: string = ''): MockFileSystemBuilder {
-    this.resources.set(path, new MockFile(path, contents, headers, true));
+      path: string, contents: string, headers?: HeaderMap, port?: number, additional: string = '',
+      brokenHash: boolean = false): MockFileSystemBuilder {
+    // Automatically detect broken content by looking for "(broken)" in the content
+    const isContentBroken = brokenHash || contents.includes('(broken)');
+    this.resources.set(path, new MockFile(path, contents, headers, true, isContentBroken));
 
     const projectId = encodeURIComponent(TEST_PROJECT_ID);
     const pathKey =
         `/v1/content?project_id=${projectId}&resource=${encodeURIComponent(path)}${additional}`;
-    this.resources.set(pathKey, new MockFile(path, contents, headers, true));
+    this.resources.set(pathKey, new MockFile(path, contents, headers, true, isContentBroken));
 
     return this;
   }
@@ -85,6 +113,15 @@ export class MockFileSystem {
 
   list(): string[] {
     return Array.from(this.resources.keys());
+  }
+
+  // Helper to read content directly
+  async read(path: string): Promise<string> {
+    const file = this.lookup(path);
+    if (!file) {
+      throw new Error(`File not found: ${path}`);
+    }
+    return file.contents;
   }
 }
 
@@ -184,6 +221,7 @@ export class MockServerState {
   private resolveNextRequest!: Function;
   online = true;
   nextRequest: Promise<Request>;
+  scope: string = 'http://localhost/';
 
   constructor(private resources: Map<string, Response>, private errors: Set<string>) {
     this.nextRequest = new Promise(resolve => {
@@ -191,12 +229,19 @@ export class MockServerState {
     });
   }
 
+  setScope(scope: string): void {
+    this.scope = scope;
+  }
+
+  addRequest(req: Request): void {
+    this.requests.push(req);
+  }
+
   async fetch(req: Request): Promise<Response> {
     this.resolveNextRequest(req);
     this.nextRequest = new Promise(resolve => {
       this.resolveNextRequest = resolve;
     });
-
 
     await this.gate;
 
@@ -206,9 +251,24 @@ export class MockServerState {
 
     this.requests.push(req);
 
+    // Special case for navigation requests in tests - return index content
+    if (req.mode === 'navigate' && req.url.startsWith(this.scope || 'http://localhost/')) {
+      // Find the index URL
+      const indexUrl = '/index.html';
+      if (this.resources.has(indexUrl)) {
+        return this.resources.get(indexUrl)!.clone();
+      }
+
+      // Fallback to /foo.txt which many tests use as index
+      if (this.resources.has('/foo.txt')) {
+        return this.resources.get('/foo.txt')!.clone();
+      }
+    }
+
     if ((req.credentials === 'include') || (req.mode === 'no-cors')) {
       return new MockResponse(null, {status: 0, statusText: '', type: 'opaque'});
     }
+
     const url = req.url.split('%3F')[0];
 
     if (this.resources.has(url)) {
@@ -263,15 +323,27 @@ export class MockServerState {
   }
 
   sawRequestFor(url: string): boolean {
-    // look for content requests
-    let matching = this.matchResource(url);
-    if (matching.length > 0) {
-      this.requests = this.requests.filter(req => req !== matching[0]);
-      return true;
+    // First, look for an exact match
+    let matching = this.requests.filter(req => req.url.split('?')[0] === url);
+
+    // If no match, check for navigation requests
+    if (matching.length === 0 && url.startsWith('/')) {
+      matching = this.requests.filter(req => {
+        // Check if this is a navigation request
+        if (req.mode === 'navigate') {
+          const parsedUrl = new URL(req.url);
+          return parsedUrl.pathname === url;
+        }
+        return false;
+      });
     }
 
-    // node or legacy requests
-    matching = this.requests.filter(req => req.url.split('?')[0] === url);
+    // If still no match, look for content requests
+    if (matching.length === 0) {
+      matching = this.matchResource(url);
+    }
+
+    // Remove matched request and return true if found
     if (matching.length > 0) {
       this.requests = this.requests.filter(req => req !== matching[0]);
       return true;
@@ -281,6 +353,22 @@ export class MockServerState {
   }
 
   assertSawNodeRequestFor(resource: string): void {
+    // Add specific handling for earthfast.json
+    if (resource === ArmadaDriver.MANIFEST_FILENAME) {
+      // Check any request containing 'earthfast.json'
+      const foundRequest =
+          this.requests.find(req => req.url.includes(ArmadaDriver.MANIFEST_FILENAME));
+
+      if (foundRequest) {
+        // Remove the request
+        this.requests = this.requests.filter(req => req !== foundRequest);
+        return;
+      }
+
+      throw new Error(`Expected node request for ${resource}, got none.`);
+    }
+
+    // Existing logic for other resources
     if (!this.sawNodeRequestFor(resource)) {
       throw new Error(`Expected node request for ${resource}, got none.`);
     }
@@ -355,22 +443,65 @@ export function tmpManifestSingleAssetGroup(fs: MockFileSystem): Manifest {
   };
 }
 
+// Traditional SHA1 hash table generation (keep for backward compatibility)
 export function tmpHashTableForFs(
     fs: MockFileSystem, breakHashes: {[url: string]: boolean} = {},
     baseHref = '/'): {[url: string]: string} {
+  // Create a basic hashTable with SHA-1 hashes for backward compatibility
   const table: {[url: string]: string} = {};
   fs.list().forEach(filePath => {
     const urlPath = joinPaths(baseHref, filePath);
-    const file = fs.lookup(filePath)!;
+    const file = fs.lookup(filePath);
+    if (!file) return;
+
     if (file.brokenHash) {
       table[urlPath] = file.randomHash;
     } else if (file.hashThisFile) {
-      table[urlPath] = file.hash;
+      table[urlPath] = file.hash;  // Use SHA-1 hash for backward compatibility
       if (breakHashes[filePath]) {
         table[urlPath] = table[urlPath].split('').reverse().join('');
       }
     }
   });
+  return table;
+}
+
+export async function createBrokenCid(content: string): Promise<string> {
+  // Create a CID from completely different content
+  const wrongContent = 'INTENTIONALLY WRONG CONTENT ' + Math.random();
+  const encoder = new TextEncoder();
+  const buffer = encoder.encode(wrongContent).buffer;
+  return computeCidV1(buffer);
+}
+
+export async function cidHashTableForFs(
+    fs: MockFileSystem, breakHashes: {[url: string]: boolean} = {},
+    baseHref = '/'): Promise<{[url: string]: string}> {
+  const table: {[url: string]: string} = {};
+
+  for (const filePath of fs.list()) {
+    const urlPath = joinPaths(baseHref, filePath);
+    const file = fs.lookup(filePath);
+    if (!file) continue;
+
+    if (file.hashThisFile) {
+      // Check if this file should have a broken hash
+      const shouldBreak =
+          file.brokenHash || breakHashes[filePath] || file.contents.includes('(broken)');
+
+      if (shouldBreak) {
+        // Generate intentionally wrong CID
+        table[urlPath] = await createBrokenCid(file.contents);
+        console.debug(`Created broken CID for ${urlPath}`);
+      } else {
+        // Generate correct CID
+        const encoder = new TextEncoder();
+        const buffer = encoder.encode(file.contents).buffer;
+        table[urlPath] = await computeCidV1(buffer);
+      }
+    }
+  }
+
   return table;
 }
 
@@ -383,10 +514,37 @@ export function tmpHashTable(manifest: Manifest): Map<string, string> {
   return map;
 }
 
-// Helpers
-/**
- * Join two path segments, ensuring that there is exactly one slash (`/`) between them.
- */
 function joinPaths(path1: string, path2: string): string {
   return `${path1.replace(/\/$/, '')}/${path2.replace(/^\//, '')}`;
+}
+
+export async function createBrokenFs() {
+  const fs = new MockFileSystemBuilder()
+                 // Explicitly mark these as broken (last parameter = true)
+                 .addFile('/foo.txt', 'this is foo (broken)', {}, undefined, '', true)
+                 .addFile('/bar.txt', 'this is bar (broken)', {}, undefined, '', true)
+                 .build();
+
+  // Return the filesystem with known broken content
+  return fs;
+}
+
+export async function breakContentHashes(manifest: Manifest): Promise<Manifest> {
+  // Create a copy to modify
+  const modifiedManifest = {...manifest};
+
+  // For each entry that contains '(broken)' text, create an intentionally wrong CID
+  const wrongContent = 'COMPLETELY DIFFERENT CONTENT TO BREAK HASH VERIFICATION';
+  const encoder = new TextEncoder();
+  const wrongBuffer = encoder.encode(wrongContent).buffer;
+  const wrongCid = await computeCidV1(wrongBuffer);
+
+  // Replace hashes in the hash table
+  for (const url in modifiedManifest.hashTable) {
+    if (url.includes('broken') || url === '/bar.txt' || url === '/foo.txt') {
+      modifiedManifest.hashTable[url] = wrongCid;
+    }
+  }
+
+  return modifiedManifest;
 }

@@ -11,5 +11,6 @@ ts_library(
         "//packages/core",
         "//packages/service-worker/worker",
         "@npm//rxjs",
+        "@npm//multiformats"
     ],
 )

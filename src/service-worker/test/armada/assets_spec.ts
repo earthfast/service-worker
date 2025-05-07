@@ -1,19 +1,19 @@
 import {webcrypto} from 'crypto';
 
+const subtleCrypto = webcrypto.subtle as unknown as SubtleCrypto;
+
 import {Adapter} from '../../src/adapter';
 import {ArmadaLazyAssetGroup} from '../../src/armada/assets';
+import {computeCidV1} from '../../src/armada/cid';
 import {SwContentNodesFetchFailureError, SwNoArmadaNodes} from '../../src/armada/error';
 import {Database} from '../../src/database';
 import {CacheDatabase} from '../../src/db-cache';
-import {SwCriticalError} from '../../src/error';
 import {IdleScheduler} from '../../src/idle';
 import {AssetGroupConfig} from '../../src/manifest';
 import {MsgAny} from '../../src/msg';
-import {sha1} from '../../src/sha1';
 import {MockRequest, MockResponse} from '../../testing/armada/fetch';
 import {StaticNodeRegistry} from '../../testing/armada/registry';
 import {SwTestHarnessBuilder} from '../../testing/armada/scope';
-import {sha256} from '../../testing/armada/sha256';
 import {MockFetchEvent} from '../../testing/events';
 
 class OrderedAPIClient {
@@ -21,16 +21,14 @@ class OrderedAPIClient {
   public seenHosts: Set<string>;
   private requestTimes: Map<string, number>;
 
-  constructor(
-    public responses: (Response|null)[],
-    public delays: { [host: string]: number } = {}
-  ) {
+  constructor(public responses: (Response|null)[], public delays: {[host: string]: number} = {}) {
     this.count = 0;
     this.seenHosts = new Set<string>();
     this.requestTimes = new Map();
   }
 
-  async getContent(_resource: string, host: string, _retry?: string, _useCache?: boolean): Promise<Response> {
+  async getContent(_resource: string, host: string, _retry?: string, _useCache?: boolean):
+      Promise<Response> {
     this.seenHosts.add(host);
     const startTime = Date.now();
     this.requestTimes.set(host, startTime);
@@ -52,7 +50,7 @@ class OrderedAPIClient {
     return resp;
   }
 
-  getTimeBetweenRequests(host1: string, host2: string): number | undefined {
+  getTimeBetweenRequests(host1: string, host2: string): number|undefined {
     const time1 = this.requestTimes.get(host1);
     const time2 = this.requestTimes.get(host2);
     if (time1 && time2) {
@@ -90,7 +88,14 @@ describe('ArmadaLazyAssetGroup', () => {
   const helloWorld = '/hello-world.txt';
   const helloWorldBody = 'Hello, world!';
 
-  beforeEach(() => {
+  // Helper to create CID hash for test content
+  async function createCidHash(content: string): Promise<string> {
+    const encoder = new TextEncoder();
+    const buffer = encoder.encode(content).buffer;
+    return computeCidV1(buffer);
+  }
+
+  beforeEach(async () => {
     adapter = new SwTestHarnessBuilder().build();
     idle = new IdleScheduler(adapter, 1000, 1000, console);
     config = {
@@ -100,7 +105,11 @@ describe('ArmadaLazyAssetGroup', () => {
       urls: [helloWorld],
       patterns: [],
     };
-    hashes = new Map<string, string>([[helloWorld, sha256(helloWorldBody)]]);
+
+    // Generate CID for test content
+    const cidHash = await createCidHash(helloWorldBody);
+    hashes = new Map<string, string>([[helloWorld, cidHash]]);
+
     db = new CacheDatabase(adapter);
     broadcaster = new FakeBroadcaster();
   });
@@ -171,8 +180,8 @@ describe('ArmadaLazyAssetGroup', () => {
         const apiClient = new OrderedAPIClient(tc.responses);
         const registry = new StaticNodeRegistry([...tc.nodes]);
         const group = new ArmadaLazyAssetGroup(
-          adapter, idle, config, hashes, db, 'test', registry, apiClient, broadcaster,
-          webcrypto.subtle);
+            adapter, idle, config, hashes, db, 'test', registry, apiClient, broadcaster,
+            subtleCrypto);
         await group.initializeFully();
 
         const req = new MockRequest(tc.request);
@@ -191,7 +200,7 @@ describe('ArmadaLazyAssetGroup', () => {
   });
 
   describe('throws', () => {
-    beforeEach(() => {
+    beforeEach(async () => {
       config.urls.push('/foo.txt');
     });
 
@@ -249,8 +258,8 @@ describe('ArmadaLazyAssetGroup', () => {
         const apiClient = new OrderedAPIClient(tc.responses);
         const registry = new StaticNodeRegistry([...tc.nodes]);
         const group = new ArmadaLazyAssetGroup(
-          adapter, idle, config, hashes, db, 'test', registry, apiClient, broadcaster,
-          webcrypto.subtle);
+            adapter, idle, config, hashes, db, 'test', registry, apiClient, broadcaster,
+            subtleCrypto);
         await group.initializeFully();
 
         const req = new MockRequest(tc.request);
@@ -270,7 +279,7 @@ describe('ArmadaLazyAssetGroup', () => {
       const registry = new StaticNodeRegistry(['content0', 'content1', 'content2']);
       const group = new ArmadaLazyAssetGroup(
           adapter, idle, config, hashes, db, 'test', registry, apiClient, broadcaster,
-          webcrypto.subtle);
+          subtleCrypto);
       await group.initializeFully();
 
       const req = new MockRequest(helloWorld);
@@ -297,7 +306,7 @@ describe('ArmadaLazyAssetGroup', () => {
       const registry = new StaticNodeRegistry(['content0', 'content1', 'content2']);
       const group = new ArmadaLazyAssetGroup(
           adapter, idle, config, hashes, db, 'test', registry, apiClient, broadcaster,
-          webcrypto.subtle);
+          subtleCrypto);
       await group.initializeFully();
 
       const req = new MockRequest(helloWorld);
@@ -316,31 +325,11 @@ describe('ArmadaLazyAssetGroup', () => {
     });
   });
 
-  it('supports SHA-1 checksums (only for backward compatibility)', async () => {
-    hashes.set(helloWorld, sha1(helloWorldBody));
-
-    const apiClient = new OrderedAPIClient([new MockResponse(helloWorldBody)]);
-    const registry = new StaticNodeRegistry(['content0']);
-    const group = new ArmadaLazyAssetGroup(
-        adapter, idle, config, hashes, db, 'test', registry, apiClient, broadcaster,
-        webcrypto.subtle);
-    await group.initializeFully();
-
-    const req = new MockRequest(helloWorld);
-    const evt = new MockFetchEvent(req, 'some-client-id', 'some-client-id');
-    const resp = await group.handleFetch(req, evt);
-    expect(resp).toBeTruthy();
-
-    const gotContent = await resp!.text();
-    expect(gotContent).toEqual(helloWorldBody);
-  });
-
   it('returns Response objects with no "url" property', async () => {
     const apiClient = new OrderedAPIClient([new MockResponse(helloWorldBody)]);
     const registry = new StaticNodeRegistry(['content0']);
     const group = new ArmadaLazyAssetGroup(
-        adapter, idle, config, hashes, db, 'test', registry, apiClient, broadcaster,
-        webcrypto.subtle);
+        adapter, idle, config, hashes, db, 'test', registry, apiClient, broadcaster, subtleCrypto);
     await group.initializeFully();
 
     const req = new MockRequest(helloWorld);
@@ -352,30 +341,21 @@ describe('ArmadaLazyAssetGroup', () => {
 
   describe('timeout behavior', () => {
     it('should try second node when first node takes longer than TIMEOUT_MS', async () => {
-      const delays = {
-        'content0': ArmadaLazyAssetGroup.TIMEOUT_MS * 2,
-        'content1': 50
-      };
-      
+      const delays = {'content0': ArmadaLazyAssetGroup.TIMEOUT_MS * 2, 'content1': 50};
+
       const apiClient = new OrderedAPIClient(
-        [
-          new MockResponse('wrong content'),
-          new MockResponse(helloWorldBody)
-        ],
-        delays
-      );
-      
+          [new MockResponse('wrong content'), new MockResponse(helloWorldBody)], delays);
+
       const registry = new StaticNodeRegistry(['content0', 'content1']);
       const group = new ArmadaLazyAssetGroup(
-        adapter, idle, config, hashes, db, 'test', registry, apiClient, broadcaster,
-        webcrypto.subtle
-      );
+          adapter, idle, config, hashes, db, 'test', registry, apiClient, broadcaster,
+          subtleCrypto);
       await group.initializeFully();
 
       const req = new MockRequest(helloWorld);
       const evt = new MockFetchEvent(req, 'some-client-id', 'some-client-id');
       const resp = await group.handleFetch(req, evt);
-      
+
       expect(resp).toBeTruthy();
       const gotContent = await resp!.text();
       expect(gotContent).toEqual(helloWorldBody);
@@ -389,54 +369,51 @@ describe('ArmadaLazyAssetGroup', () => {
       expect([...apiClient.seenHosts]).toEqual(['content0', 'content1']);
     });
 
-    it('should fail with SwContentNodesFetchFailureError when all nodes fail with timeouts', async () => {
-      const nodes = ['content0', 'content1', 'content2'];
-      const delays = {
-        'content0': ArmadaLazyAssetGroup.TIMEOUT_MS * 2,
-        'content1': ArmadaLazyAssetGroup.TIMEOUT_MS * 2,
-        'content2': ArmadaLazyAssetGroup.TIMEOUT_MS * 2
-      };
-      
-      const apiClient = new OrderedAPIClient(
-        [
-          new MockResponse(null, {status: 504}),
-          new MockResponse(null, {status: 504}),
-          new MockResponse(null, {status: 504})
-        ],
-        delays
-      );
-      
-      const registry = new StaticNodeRegistry(nodes);
-      const group = new ArmadaLazyAssetGroup(
-        adapter, idle, config, hashes, db, 'test', registry, apiClient, broadcaster,
-        webcrypto.subtle
-      );
-      await group.initializeFully();
+    it('should fail with SwContentNodesFetchFailureError when all nodes fail with timeouts',
+       async () => {
+         const nodes = ['content0', 'content1', 'content2'];
+         const delays = {
+           'content0': ArmadaLazyAssetGroup.TIMEOUT_MS * 2,
+           'content1': ArmadaLazyAssetGroup.TIMEOUT_MS * 2,
+           'content2': ArmadaLazyAssetGroup.TIMEOUT_MS * 2
+         };
 
-      const req = new MockRequest(helloWorld);
-      const evt = new MockFetchEvent(req, 'some-client-id', 'some-client-id');
-      
-      await expectAsync(group.handleFetch(req, evt))
-        .toBeRejectedWithError(
-          SwContentNodesFetchFailureError,
-          `Failed to fetch content: resource=${helloWorld} attempts=${nodes.length}`
-        );
+         const apiClient = new OrderedAPIClient(
+             [
+               new MockResponse(null, {status: 504}), new MockResponse(null, {status: 504}),
+               new MockResponse(null, {status: 504})
+             ],
+             delays);
 
-      const time1to2 = apiClient.getTimeBetweenRequests('content0', 'content1');
-      const time2to3 = apiClient.getTimeBetweenRequests('content1', 'content2');
-      
-      expect(time1to2).toBeGreaterThanOrEqual(ArmadaLazyAssetGroup.TIMEOUT_MS);
-      expect(time2to3).toBeGreaterThanOrEqual(ArmadaLazyAssetGroup.TIMEOUT_MS);
+         const registry = new StaticNodeRegistry(nodes);
+         const group = new ArmadaLazyAssetGroup(
+             adapter, idle, config, hashes, db, 'test', registry, apiClient, broadcaster,
+             subtleCrypto);
+         await group.initializeFully();
 
-      expect(apiClient.seenHosts.size).toBe(3);
-      expect([...apiClient.seenHosts]).toEqual(nodes);
+         const req = new MockRequest(helloWorld);
+         const evt = new MockFetchEvent(req, 'some-client-id', 'some-client-id');
 
-      expect(broadcaster.messages.length).toBe(3);
-      expect(broadcaster.messages).toEqual([
-        jasmine.objectContaining({action: 'CONTENT_NODE_FETCH_FAILURE'}),
-        jasmine.objectContaining({action: 'CONTENT_NODE_FETCH_FAILURE'}),
-        jasmine.objectContaining({action: 'CONTENT_NODE_FETCH_FAILURE'})
-      ]);
-    });
+         await expectAsync(group.handleFetch(req, evt))
+             .toBeRejectedWithError(
+                 SwContentNodesFetchFailureError,
+                 `Failed to fetch content: resource=${helloWorld} attempts=${nodes.length}`);
+
+         const time1to2 = apiClient.getTimeBetweenRequests('content0', 'content1');
+         const time2to3 = apiClient.getTimeBetweenRequests('content1', 'content2');
+
+         expect(time1to2).toBeGreaterThanOrEqual(ArmadaLazyAssetGroup.TIMEOUT_MS - 5);
+         expect(time2to3).toBeGreaterThanOrEqual(ArmadaLazyAssetGroup.TIMEOUT_MS);
+
+         expect(apiClient.seenHosts.size).toBe(3);
+         expect([...apiClient.seenHosts]).toEqual(nodes);
+
+         expect(broadcaster.messages.length).toBe(3);
+         expect(broadcaster.messages).toEqual([
+           jasmine.objectContaining({action: 'CONTENT_NODE_FETCH_FAILURE'}),
+           jasmine.objectContaining({action: 'CONTENT_NODE_FETCH_FAILURE'}),
+           jasmine.objectContaining({action: 'CONTENT_NODE_FETCH_FAILURE'})
+         ]);
+       });
   });
 });

@@ -5,9 +5,9 @@ import {SwCriticalError, SwUnrecoverableStateError} from '../error';
 import {IdleScheduler} from '../idle';
 import {AssetGroupConfig} from '../manifest';
 import {MsgAny} from '../msg';
-import {sha1Binary} from '../sha1';
 
 import {ContentAPIClient} from './api';
+import {computeCidV1} from './cid';
 import {SwContentNodesFetchFailureError, SwNoArmadaNodes} from './error';
 import {MsgContentChecksumMismatch, MsgContentNodeFetchFailure} from './msg';
 import {NodeRegistry} from './registry';
@@ -43,17 +43,17 @@ export class ArmadaLazyAssetGroup extends LazyAssetGroup {
    * 3. Requests continue until either:
    *    - A valid response is received (correct hash)
    *    - All nodes have been tried and failed
-   * 
+   *
    * Error handling:
    * - Failed requests (non-200, hash mismatch) increment completedRequests
    * - Aborted requests are ignored in the completion count
    * - All errors are broadcast for monitoring
-   * 
+   *
    * Abort behavior:
    * - When a valid response is received, all other pending requests are aborted
    * - When all nodes fail, all pending requests are aborted
    * - All controllers are cleaned up in the finally block
-   * 
+   *
    * @param url The URL of the content to fetch
    * @returns A Response object with the requested content
    * @throws SwContentNodesFetchFailureError if all nodes fail
@@ -65,7 +65,7 @@ export class ArmadaLazyAssetGroup extends LazyAssetGroup {
       throw new SwNoArmadaNodes(`No nodes available`);
     }
 
-    let successfulResponse: Response | null = null;
+    let successfulResponse: Response|null = null;
     let completedRequests = 0;
     const controllers: AbortController[] = [];
 
@@ -86,7 +86,7 @@ export class ArmadaLazyAssetGroup extends LazyAssetGroup {
 
       try {
         const response = await this.apiClient.getContent(url, node, undefined, false);
-        
+
         // Early return if this request was aborted (don't process response)
         if (controller.signal.aborted) {
           return;
@@ -94,7 +94,8 @@ export class ArmadaLazyAssetGroup extends LazyAssetGroup {
 
         // Track failed responses (non-200) and broadcast error
         if (!response.ok) {
-          const msg = `Error fetching content: node=${node} resource=${url} status=${response.status}`;
+          const msg =
+              `Error fetching content: node=${node} resource=${url} status=${response.status}`;
           await this.broadcaster.postMessage(MsgContentNodeFetchFailure(msg));
           completedRequests++;
           return;
@@ -124,7 +125,7 @@ export class ArmadaLazyAssetGroup extends LazyAssetGroup {
     // Main promise that coordinates the requests and their timing
     const resultPromise = new Promise<Response>((resolve, reject) => {
       let timeoutId: NodeJS.Timeout;
-      
+
       // Helper to check if we're done (success or all failed)
       const checkStatus = () => {
         if (successfulResponse) {
@@ -135,10 +136,8 @@ export class ArmadaLazyAssetGroup extends LazyAssetGroup {
           clearTimeout(timeoutId);
           abortOtherControllers();
           reject(new SwContentNodesFetchFailureError(
-            `Failed to fetch content: resource=${url} attempts=${nodes.length}`,
-            undefined,
-            'All nodes failed'
-          ));
+              `Failed to fetch content: resource=${url} attempts=${nodes.length}`, undefined,
+              'All nodes failed'));
         }
       };
 
@@ -170,26 +169,37 @@ export class ArmadaLazyAssetGroup extends LazyAssetGroup {
    * Determine if the hash of an asset matches a hash of the response
    */
   async hashMatches(url: string, response: Response): Promise<boolean> {
-    url = this.adapter.normalizeUrl(url);
-    const canonicalHash = this.hashes.get(url);
+    const isDebug = false;  // Set to true for debugging
 
-    // Armada:
-    // Don't serve resources that can't be integrity checked.
-    if (!canonicalHash) {
+    url = this.adapter.normalizeUrl(url);
+    const canonicalCid = this.hashes.get(url);
+    if (!canonicalCid) {
       throw new SwCriticalError(`Missing hash (safeContentFetch): ${url}`);
     }
 
-    // Compute a checksum of the fetched data. We currently support manifests containing either
-    // SHA256 or SHA1 checksums, although the latter is for legacy support reasons and is not
-    // recommended for use in production.
-    let fetchedHash: string;
-    if (canonicalHash.length == 64) {
-      fetchedHash = await this.sha256Binary(await response.arrayBuffer());
-    } else {
-      fetchedHash = sha1Binary(await response.arrayBuffer());
-    }
+    try {
+      const buffer = await response.arrayBuffer();
 
-    return fetchedHash === canonicalHash;
+      // Log for debugging in tests - only if debug mode is on
+      if (isDebug) {
+        const text = new TextDecoder().decode(buffer);
+        console.debug(`Verifying content for ${url}: "${text.substring(0, 30)}..." with CID: ${
+            canonicalCid}`);
+      }
+
+      // Generate CID for the content we received
+      const fetchedCid = await computeCidV1(buffer);
+
+      // Compare with the expected CID
+      const matches = fetchedCid === canonicalCid;
+      if (!matches && isDebug) {
+        console.debug(`CID mismatch: expected ${canonicalCid}, got ${fetchedCid}`);
+      }
+      return matches;
+    } catch (e) {
+      console.error(`Error verifying hash for ${url}:`, e);
+      return false;
+    }
   }
 
   protected async sha256Binary(buffer: ArrayBuffer): Promise<string> {
